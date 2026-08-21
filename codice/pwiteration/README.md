@@ -6,9 +6,9 @@ Questo progetto implementa l'algoritmo **Power Iteration** utilizzando **PySpark
 
 La Power Iteration è un metodo iterativo utilizzato per trovare l'autovettore associato all'autovalore dominante di una matrice. L'algoritmo parte da un vettore iniziale e, ad ogni iterazione, calcola il prodotto tra la matrice e il vettore, normalizzando successivamente il risultato:
 
-\[
-v_{k+1} = \frac{A v_k}{\|A v_k\|}
-\]
+$$
+v_{k+1} = \frac{A v_k}{\lVert A v_k \rVert}
+$$
 
 Il procedimento viene ripetuto fino al raggiungimento della convergenza oppure fino al numero massimo di iterazioni.
 
