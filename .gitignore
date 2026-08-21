@@ -1,0 +1,8 @@
+# File CSV
+*.csv
+
+# File Python compilati
+*.pyc
+
+# Cartelle __pycache__
+__pycache__/
