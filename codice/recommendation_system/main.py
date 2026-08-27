@@ -1,149 +1,52 @@
 import os
 
-
 os.environ["PYSPARK_PYTHON"] = "/opt/anaconda3/bin/python"
 os.environ["PYSPARK_DRIVER_PYTHON"] = "/opt/anaconda3/bin/python"
 
-
-import pyspark
-from pyspark.sql import *
-from pyspark.sql.types import *
-from pyspark.sql.functions import *
 from pyspark import SparkContext, SparkConf
+from pyspark.sql import SparkSession
 
-
-
-from pyspark.ml.recommendation import ALS
-from pyspark.ml.evaluation import RegressionEvaluator
-
+from preprocessing import load_data
+from recommendation import calculate_statistics, train_model, calculate_rmse, generate_recommendations
 
 
 conf = SparkConf().set("spark.ui.port", "4050")
-
 sc = SparkContext(conf=conf)
-
 spark = SparkSession.builder.getOrCreate()
 
+DATA_PATH = "data"
 
 
-schema_ratings = StructType([
-    StructField("user_id", IntegerType(), False),
-    StructField("item_id", IntegerType(), False),
-    StructField("rating", IntegerType(), False),
-    StructField("timestamp", IntegerType(), False)
-])
-
-schema_items = StructType([
-    StructField("item_id", IntegerType(), False),
-    StructField("movie", StringType(), False)
-])
-
-
-training = spark.read.option("sep", "\t").csv(
-    "data/u1.base",
-    header=False,
-    schema=schema_ratings
-)
+training, test, items = load_data(spark, DATA_PATH)
 
 
 
+reviews_per_movie, avg_rating_movie = calculate_statistics(training)
 
-test = spark.read.option("sep", "\t").csv(
-    "data/u1.test",
-    header=False,
-    schema=schema_ratings
-)
-
-items = spark.read.option("sep", "|").csv(
-    "data/u.item",
-    header=False,
-    schema=schema_items
-)
-
-
-
-training.printSchema()
-test.printSchema()
-items.printSchema()
-
-print("Prime 3 righe del training:")
-print(training.take(3))
-
-print("Prime 3 righe degli items:")
-print(items.take(3))
-
-
-
-reviews_per_movie = (
-    training
-    .groupBy("item_id")
-    .count()
-    .orderBy("item_id")
-)
-
-
+print("\nNumero di recensioni per film:")
 reviews_per_movie.show(5)
 
-
-avg_rating_movie = (
-    training
-    .groupBy("item_id")
-    .agg(avg("rating").alias("avg_rating"))
-    .orderBy("item_id")
-)
+print("\nRating medio per film:")
 avg_rating_movie.show(5)
 
 
 
-als = ALS(
-    userCol="user_id",
-    itemCol="item_id",
-    ratingCol="rating",
-    coldStartStrategy="drop",
-    nonnegative=True
-)
-
-
-model = als.fit(training)
-
-
-predictions = model.transform(test)
-
-predictions.show()
+model = train_model(training)
 
 
 
+predictions, rmse = calculate_rmse(model, test)
 
-evaluator = RegressionEvaluator(
-    metricName="rmse",
-    labelCol="rating",
-    predictionCol="prediction"
-)
+print("\nPredizioni:")
+predictions.show(5)
 
-rmse = evaluator.evaluate(predictions)
-
-print("RMSE = ", rmse)
+print("\nRMSE =", rmse)
 
 
-user_recommendations = model.recommendForAllUsers(10)
 
-user_recommendations.show(truncate=False)
+recommendations = generate_recommendations(model, items, k=10)
 
-recommendations = user_recommendations.select(
-    "user_id",
-    explode("recommendations").alias("recommendation")
-)
+print("\nTop 10 raccomandazioni per ogni utente:")
+recommendations.show(100, truncate=False)
 
-recommendations = recommendations.select(
-    "user_id",
-    col("recommendation.item_id").alias("item_id"),
-    col("recommendation.rating").alias("predicted_rating")
-)
-
-recommendations_with_movies = recommendations.join(
-    items,
-    on="item_id",
-    how="left"
-)
-
-recommendations_with_movies.show(100, truncate=False)
+spark.stop()
