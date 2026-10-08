@@ -1,13 +1,16 @@
 import torch
 
-from src.gnn_data import networkx_to_pyg
-from src.gnn_model import GraphSAGE
-from src.gnn_training import (
+from src.gnn import (
+    networkx_to_pyg,
+    GraphSAGE,
     MLPDecoder,
     train_gnn,
     prepare_edges,
     predict_edges
 )
+
+
+
 from src.evaluation import evaluate_scores
 
 

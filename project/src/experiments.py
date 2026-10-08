@@ -9,16 +9,16 @@ from sklearn.metrics import (
     average_precision_score
 )
 
-from src.gnn_data import networkx_to_pyg
-from src.gnn_model import GraphSAGE
-
-from src.gnn_training import (
+from src.gnn import (
+    networkx_to_pyg,
+    GraphSAGE,
+    MLPDecoder,
     train_gnn,
     predict_edges,
     predict_query_candidates,
-    prepare_edges,
-    MLPDecoder
+    prepare_edges
 )
+
 
 from src.evaluation import hits_at_k
 

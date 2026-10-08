@@ -1,6 +1,153 @@
+import random
 import networkx as nx
 import torch
 from torch_geometric.data import Data
+
+def prepare_edges(
+    positive_edges,
+    negative_edges,
+    node_to_idx
+):
+    """
+    Converte archi NetworkX in edge_index PyTorch Geometric.
+
+    Gli archi positivi vengono assegnati label 1.
+    Gli archi negativi vengono assegnati label 0.
+    """
+
+    edges = []
+    labels = []
+
+    for u, v in positive_edges:
+        edges.append([
+            node_to_idx[u],
+            node_to_idx[v]
+        ])
+        labels.append(1.0)
+
+    for u, v in negative_edges:
+        edges.append([
+            node_to_idx[u],
+            node_to_idx[v]
+        ])
+        labels.append(0.0)
+
+    if len(edges) == 0:
+
+        edge_index = torch.empty(
+            (2, 0),
+            dtype=torch.long
+        )
+
+        labels = torch.empty(
+            (0,),
+            dtype=torch.float
+        )
+
+        return edge_index, labels
+
+    edge_index = torch.tensor(
+        edges,
+        dtype=torch.long
+    ).t().contiguous()
+
+    labels = torch.tensor(
+        labels,
+        dtype=torch.float
+    )
+
+    return edge_index, labels
+
+
+def sample_message_passing_edges(
+    edge_index,
+    keep_ratio,
+    seed
+):
+    """
+    Seleziona casualmente una percentuale degli archi
+    utilizzati per il message passing.
+    """
+
+    if not 0.0 <= keep_ratio <= 1.0:
+        raise ValueError(
+            "keep_ratio deve essere compreso tra 0 e 1."
+        )
+
+    if edge_index.numel() == 0:
+
+        return torch.empty(
+            (2, 0),
+            dtype=edge_index.dtype,
+            device=edge_index.device
+        )
+
+    if keep_ratio == 1.0:
+        return edge_index
+
+    if keep_ratio == 0.0:
+
+        return torch.empty(
+            (2, 0),
+            dtype=edge_index.dtype,
+            device=edge_index.device
+        )
+
+    edges = edge_index.t().tolist()
+
+    undirected_edges = set()
+
+    for u, v in edges:
+
+        edge = tuple(sorted((u, v)))
+
+        undirected_edges.add(edge)
+
+    undirected_edges = list(
+        undirected_edges
+    )
+
+    rng = random.Random(seed)
+
+    rng.shuffle(
+        undirected_edges
+    )
+
+    n_keep = int(
+        len(undirected_edges)
+        * keep_ratio
+    )
+
+    selected_edges = (
+        undirected_edges[:n_keep]
+    )
+
+    directed_edges = []
+
+    for u, v in selected_edges:
+
+        directed_edges.append(
+            [u, v]
+        )
+
+        directed_edges.append(
+            [v, u]
+        )
+
+    if len(directed_edges) == 0:
+
+        return torch.empty(
+            (2, 0),
+            dtype=edge_index.dtype,
+            device=edge_index.device
+        )
+
+    return torch.tensor(
+        directed_edges,
+        dtype=edge_index.dtype,
+        device=edge_index.device
+    ).t().contiguous()
+
 
 
 def networkx_to_pyg(G, feature_mode="full"):

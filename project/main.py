@@ -25,7 +25,7 @@ from src.sanity_checks import (
     verify_feature_source
 )
 
-from src.gnn_data import networkx_to_pyg
+from src.gnn import networkx_to_pyg
 
 from src.baseline import (
     common_neighbors_scores,
@@ -46,7 +46,6 @@ from src.feature_ablation import (
 from src.experiments import (
     run_gnn_multiseed
 )
-
 
 # ============================================================
 # CONFIGURATION
