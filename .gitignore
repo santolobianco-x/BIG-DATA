@@ -1,15 +1,72 @@
 
-# File CSV
-*.csv
+# =========================
+# Python
+# =========================
 
-# File Python compilati
-*.pyc
-
-# Cartelle __pycache__
 __pycache__/
+*.py[cod]
+*$py.class
 
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
 
+# Conda
+.conda/
+
+# =========================
 # macOS
+# =========================
+
 .DS_Store
 
-data/
+# =========================
+# Jupyter
+# =========================
+
+.ipynb_checkpoints/
+
+# =========================
+# Data
+# =========================
+
+# Dataset originali
+data/*.txt
+data/*.txt.gz
+data/*.tar.gz
+data/*.tgz
+
+# =========================
+# Results / generated files
+# =========================
+
+results/
+plots/
+
+# =========================
+# Python tools
+# =========================
+
+.pytest_cache/
+.mypy_cache/
+
+# =========================
+# IDE
+# =========================
+
+.vscode/
+.idea/
+
+# =========================
+# Environment / secrets
+# =========================
+
+.env
+
+# =========================
+# CSV
+# =========================
+
+*.csv
