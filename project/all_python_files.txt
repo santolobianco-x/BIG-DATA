@@ -1,0 +1,4026 @@
+CODICE SORGENTE PYTHON DEL PROGETTO
+================================================================================
+
+
+
+================================================================================
+FILE: config.py
+================================================================================
+
+
+from pathlib import Path
+
+
+# ============================================================
+# PATHS
+# ============================================================
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+
+DATASET_PATH = PROJECT_ROOT / "data" / "ca-AstroPh.txt.gz"
+DATASET_NAME = DATASET_PATH.name.split(".")[0]
+RESULTS_DIR = PROJECT_ROOT / "results"
+
+
+# ============================================================
+# REPRODUCIBILITY
+# ============================================================
+
+SEED = 42
+
+GNN_SEEDS = (1, 2)
+
+
+# ============================================================
+# DATA SPLIT
+# ============================================================
+
+TEST_RATIO = 0.10
+VAL_RATIO = 0.10
+
+SUPERVISION_RATIO = 0.10
+
+
+# ============================================================
+# GNN
+# ============================================================
+
+HIDDEN_CHANNELS = 64
+OUT_CHANNELS = 32
+DECODER_HIDDEN_DIM = 64
+
+LEARNING_RATE = 0.001
+EPOCHS = 500
+
+DEVICE = "cpu"
+
+
+# ============================================================
+# HITS@K
+# ============================================================
+
+NUM_QUERY_POSITIVES = 1000
+NEGATIVES_PER_QUERY = 999
+
+HITS_K_VALUES = (10, 50, 100)
+
+
+# ============================================================
+# FEATURE ABLATION
+# ============================================================
+
+ABLATION_EPOCHS = 400
+ABLATION_SEED = 1
+ABLATION_LEARNING_RATE = 0.01
+
+
+
+
+================================================================================
+FILE: experiments/__init__.py
+================================================================================
+
+
+"""Package contenente gli esperimenti del progetto BIG DATA."""
+
+
+
+================================================================================
+FILE: experiments/baseline_evaluation.py
+================================================================================
+
+
+"""Valutazione dei metodi baseline per la link prediction."""
+
+from config import HITS_K_VALUES
+from src.evaluation import evaluate_scores
+from experiments.common import evaluate_baseline_hits
+
+
+def evaluate_baselines(
+    graph,
+    test_edges,
+    test_negative_edges,
+    query_positive_edges,
+    query_negative_edges,
+    baseline_methods,
+    title,
+    print_section,
+):
+    """Calcola AUC, AP e Hits@K sul grafo indicato."""
+
+    print_section(title)
+
+    results = {}
+    hits_results = {}
+
+    for name, scoring_function in baseline_methods.items():
+        print()
+        print("-" * 70)
+        print(name)
+        print("-" * 70)
+
+        positive_scores = scoring_function(graph, test_edges)
+        negative_scores = scoring_function(graph, test_negative_edges)
+
+        metrics = evaluate_scores(positive_scores, negative_scores)
+
+        results[name] = {
+            "auc": metrics["auc"],
+            "ap": metrics["ap"],
+        }
+
+        print(f"Test AUC: {metrics['auc']:.6f}")
+        print(f"Test AP:  {metrics['ap']:.6f}")
+
+        hits = evaluate_baseline_hits(
+            graph,
+            query_positive_edges,
+            query_negative_edges,
+            scoring_function,
+            name,
+            k_values=HITS_K_VALUES,
+        )
+
+        hits_results[name] = hits
+
+        for k in HITS_K_VALUES:
+            print(f"Hits@{k}: {hits[k]:.4f}")
+
+    return results, hits_results
+
+
+
+
+================================================================================
+FILE: experiments/baseline_setup.py
+================================================================================
+
+
+"""Configurazione dei metodi baseline per la link prediction."""
+
+from src.baseline import (
+    common_neighbors_scores,
+    jaccard_scores,
+    adamic_adar_scores,
+    preferential_attachment_scores,
+)
+
+
+def get_baseline_methods():
+    """Restituisce i metodi baseline disponibili."""
+    return {
+        "Common Neighbors": common_neighbors_scores,
+        "Jaccard": jaccard_scores,
+        "Adamic-Adar": adamic_adar_scores,
+        "Preferential Attachment": preferential_attachment_scores,
+    }
+
+
+
+
+================================================================================
+FILE: experiments/common.py
+================================================================================
+
+from src.evaluation import hits_at_k
+
+def evaluate_baseline_hits(
+        G,
+        query_positive_edges,
+        query_negative_edges,
+        scoring_function,
+        name,
+        k_values=(10, 50, 100),
+):
+    """
+    Calcola Hits@K di un baseline su un insieme di query.
+
+    Parameters
+    ----------
+    G : networkx.Graph
+        Grafo utilizzato per calcolare gli score.
+        Per la valutazione deve essere il grafo di training.
+
+    query_positive_edges : iterable
+        Un arco positivo per ogni query.
+
+    query_negative_edges : iterable of iterables
+        Archi negativi candidati per ciascuna query.
+
+    scoring_function : callable
+        Funzione con firma scoring_function(G, edges).
+
+    name : str
+        Nome del baseline, utilizzato nel logging.
+
+    k_values : iterable of int
+        Valori di K per i quali calcolare Hits@K.
+
+    Returns
+    -------
+    dict
+        Dizionario {K: Hits@K}.
+    """
+    # Initial logic and parameters are validated
+    query_positive_edges = list(query_positive_edges)
+    query_negative_edges = [
+        list(edges)
+        for edges in query_negative_edges
+    ]
+    k_values = tuple(k_values)
+
+    if not query_positive_edges:
+        raise ValueError("L'insieme delle query positive è vuoto.")
+
+    if len(query_positive_edges) != len(query_negative_edges):
+        raise ValueError(
+            "Il numero di query positive deve coincidere "
+            "con quello degli insiemi di candidati negativi."
+        )
+
+    if not k_values:
+        raise ValueError("Specificare almeno un valore di K.")
+
+    if any(k <= 0 for k in k_values):
+        raise ValueError("Tutti i valori di K devono essere positivi.")
+
+    print()
+    print(f"Computing Hits@K for {name}...")
+
+    positive_scores = scoring_function(
+        G,
+        query_positive_edges,
+    )
+
+    if len(positive_scores) != len(query_positive_edges):
+        raise ValueError(
+            f"{name}: numero di score positivi non coerente "
+            "con il numero di query."
+        )
+
+    # Vettorizzazione: valutazione flat e ricostruzione
+    flat_negative_edges = [
+        edge
+        for query_edges in query_negative_edges
+        for edge in query_edges
+    ]
+
+    flat_scores = scoring_function(
+        G,
+        flat_negative_edges,
+    )
+
+    if len(flat_scores) != len(flat_negative_edges):
+        raise ValueError(
+            f"{name}: numero di score negativi restituiti non coerente."
+        )
+
+    n_negatives = len(query_negative_edges[0])
+    negative_scores = [
+        flat_scores[i * n_negatives : (i + 1) * n_negatives]
+        for i in range(len(query_positive_edges))
+    ]
+
+    results = {}
+    for k in k_values:
+        results[k] = hits_at_k(
+            positive_scores,
+            negative_scores,
+            k,
+        )
+
+    return results
+
+
+================================================================================
+FILE: experiments/export_results.py
+================================================================================
+
+import csv
+from pathlib import Path
+
+
+
+def export_rows(rows, output_path, overwrite=True):
+    """Esporta una lista di dizionari in un file CSV.
+
+    Se il file esiste già, non lo modifica a meno che
+    overwrite=True.
+    """
+    rows = list(rows)
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not rows:
+        raise ValueError(
+            f"Nessun risultato da esportare: {output_path}"
+        )
+
+    if output_path.exists() and not overwrite:
+        print(
+            f"Risultati già presenti, esportazione saltata: "
+            f"{output_path}"
+        )
+        return False
+
+    fieldnames = list(rows[0].keys())
+
+    with output_path.open(
+        "w",
+        newline="",
+        encoding="utf-8",
+    ) as file:
+        writer = csv.DictWriter(
+            file,
+            fieldnames=fieldnames,
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+
+    print(f"Risultati salvati in: {output_path}")
+    return True
+
+
+
+def flatten_degree_bias_results(results):
+    rows = []
+
+    for baseline, quartiles in results.items():
+        for quartile, metrics in quartiles.items():
+            rows.append({
+                "baseline": baseline,
+                "quartile": quartile,
+                "positive_edges": metrics["positive_edges"],
+                "negative_edges": metrics["negative_edges"],
+                "auc": metrics["auc"],
+                "ap": metrics["ap"],
+            })
+
+    return rows
+
+
+
+================================================================================
+FILE: experiments/run_ablation.py
+================================================================================
+
+
+import torch
+import numpy as np
+
+from src.gnn import (
+    networkx_to_pyg,
+    GraphSAGE,
+    MLPDecoder,
+    train_gnn,
+    prepare_edges,
+    predict_edges
+)
+
+from src.evaluation import evaluate_scores
+
+
+def run_feature_ablation(
+    message_passing_graph,
+    supervised_train_edges,
+    supervised_train_negative_edges,
+    val_edges,
+    val_negative_edges,
+    test_edges,
+    test_negative_edges,
+    hidden_channels=64,
+    out_channels=32,
+    decoder_hidden_dim=64,
+    learning_rate=0.01,
+    epochs=400,
+    seed=1,
+    device="cpu"
+):
+    """
+    Confronta quattro configurazioni di feature:
+    - full
+    - degree
+    - clustering
+    - constant
+
+    L'encoder utilizza soltanto il message-passing graph.
+    Il decoder viene addestrato sugli archi supervisionati.
+    Il checkpoint migliore viene selezionato sulla validation.
+    Il test viene utilizzato esclusivamente per la valutazione.
+    """
+
+    feature_modes = [
+        "full",
+        "degree",
+        "clustering",
+        "constant"
+    ]
+
+    results = {}
+
+    print("\n" + "=" * 70)
+    print("FEATURE ABLATION STUDY")
+    print("=" * 70)
+
+    for mode in feature_modes:
+
+        print("\n" + "-" * 70)
+        print(f"FEATURE CONFIGURATION: {mode.upper()}")
+        print("-" * 70)
+
+        # ----------------------------------------------------
+        # 1. RIPRODUCIBILITÀ
+        # ----------------------------------------------------
+
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+
+        # ----------------------------------------------------
+        # 2. CREAZIONE DEL GRAFO PYTORCH GEOMETRIC
+        # ----------------------------------------------------
+
+        data, node_to_idx = networkx_to_pyg(
+            message_passing_graph,
+            feature_mode=mode
+        )
+
+        data = data.to(device)
+
+        if mode == "constant":
+            degrees = torch.bincount(
+                data.edge_index[0],
+                minlength=data.num_nodes
+            )
+
+            print(
+                "Feature rows uniche:",
+                torch.unique(data.x, dim=0).size(0)
+            )
+            print(
+                "Nodi isolati nel message-passing graph:",
+                (degrees == 0).sum().item()
+            )
+            print(
+                "Nodi non isolati:",
+                (degrees > 0).sum().item()
+            )
+
+        print(f"Input features: {data.x.shape[1]}")
+        print(f"Nodes: {data.num_nodes}")
+        print(
+            "Message-passing edges: "
+            f"{data.edge_index.shape[1]}"
+        )
+        print(
+            "Supervised positive edges: "
+            f"{len(supervised_train_edges)}"
+        )
+        print(
+            "Supervised negative edges: "
+            f"{len(supervised_train_negative_edges)}"
+        )
+
+        # ----------------------------------------------------
+        # 3. CREAZIONE DEL MODELLO
+        # ----------------------------------------------------
+
+        model = GraphSAGE(
+            in_channels=data.x.shape[1],
+            hidden_channels=hidden_channels,
+            out_channels=out_channels
+        ).to(device)
+
+        decoder = MLPDecoder(
+            embedding_dim=out_channels,
+            hidden_dim=decoder_hidden_dim
+        ).to(device)
+
+        # ----------------------------------------------------
+        # 4. OPTIMIZER
+        # ----------------------------------------------------
+
+        optimizer = torch.optim.Adam(
+            list(model.parameters())
+            + list(decoder.parameters()),
+            lr=learning_rate
+        )
+
+        # ----------------------------------------------------
+        # 5. TRAINING
+        # ----------------------------------------------------
+
+        history = train_gnn(
+            model=model,
+            decoder=decoder,
+            data=data,
+            train_edges=supervised_train_edges,
+            train_negative_edges=supervised_train_negative_edges,
+            val_edges=val_edges,
+            val_negative_edges=val_negative_edges,
+            node_to_idx=node_to_idx,
+            optimizer=optimizer,
+            epochs=epochs,
+            keep_ratio=1.0,
+            seed=seed
+        )
+
+        # ----------------------------------------------------
+        # 6. CONVERSIONE DEGLI ARCHI DI TEST
+        # ----------------------------------------------------
+
+        test_edge_index, _ = prepare_edges(
+            test_edges,
+            test_negative_edges,
+            node_to_idx
+        )
+
+        test_edge_index = test_edge_index.to(device)
+
+        # ----------------------------------------------------
+        # 7. PREDIZIONI SUL TEST
+        # ----------------------------------------------------
+
+        model.eval()
+        decoder.eval()
+
+        test_scores = predict_edges(
+            model=model,
+            decoder=decoder,
+            data=data,
+            edge_index=test_edge_index
+        )
+
+        # ----------------------------------------------------
+        # 8. SEPARAZIONE POSITIVI E NEGATIVI
+        # ----------------------------------------------------
+
+        n_positive = len(test_edges)
+
+        positive_scores = (
+            test_scores[:n_positive]
+            .detach()
+            .cpu()
+            .numpy()
+        )
+
+        negative_scores = (
+            test_scores[n_positive:]
+            .detach()
+            .cpu()
+            .numpy()
+        )
+
+        # ----------------------------------------------------
+        # 9. DIAGNOSTICA APPROFONDITA: FEATURE CONSTANT
+        # ----------------------------------------------------
+
+        if mode == "constant":
+
+            with torch.no_grad():
+                z = model(data.x, data.edge_index)
+
+            degrees = torch.bincount(
+                data.edge_index[0],
+                minlength=data.num_nodes
+            )
+
+            isolated = degrees == 0
+            non_isolated = degrees > 0
+
+            z_isolated = z[isolated]
+            z_non_isolated = z[non_isolated]
+
+            print("\n" + "=" * 60)
+            print("CONSTANT FEATURE DIAGNOSTICS")
+            print("=" * 60)
+
+            print("Embedding shape:", tuple(z.shape))
+
+            print(
+                "Unique embeddings exact:",
+                torch.unique(z, dim=0).size(0)
+            )
+
+            print(
+                "Unique embeddings rounded 6dp:",
+                torch.unique(
+                    z.round(decimals=6),
+                    dim=0
+                ).size(0)
+            )
+
+            print(
+                "Embedding std complessiva:",
+                z.std().item()
+            )
+
+            if z_non_isolated.size(0) > 0:
+                print(
+                    "Max difference non-isolated:",
+                    (
+                        z_non_isolated - z_non_isolated[0]
+                    ).abs().max().item()
+                )
+
+                print(
+                    "Std embedding nodi non isolati:",
+                    z_non_isolated.std().item()
+                )
+
+            if z_isolated.size(0) > 0:
+                print(
+                    "Std embedding nodi isolati:",
+                    z_isolated.std().item()
+                )
+
+                print(
+                    "Max absolute isolated embedding:",
+                    z_isolated.abs().max().item()
+                )
+
+            print("\nPositive scores:")
+            print("  Min:", float(np.min(positive_scores)))
+            print("  Max:", float(np.max(positive_scores)))
+            print("  Mean:", float(np.mean(positive_scores)))
+            print("  Std:", float(np.std(positive_scores)))
+
+            print("\nNegative scores:")
+            print("  Min:", float(np.min(negative_scores)))
+            print("  Max:", float(np.max(negative_scores)))
+            print("  Mean:", float(np.mean(negative_scores)))
+            print("  Std:", float(np.std(negative_scores)))
+
+            print(
+                "\nPositive scores finite:",
+                bool(np.isfinite(positive_scores).all())
+            )
+            print(
+                "Negative scores finite:",
+                bool(np.isfinite(negative_scores).all())
+            )
+
+        # ----------------------------------------------------
+        # 10. METRICHE DI TEST
+        # ----------------------------------------------------
+
+        test_metrics = evaluate_scores(
+            positive_scores,
+            negative_scores
+        )
+
+        test_auc = test_metrics["auc"]
+        test_ap = test_metrics["ap"]
+
+        # ----------------------------------------------------
+        # 11. SALVATAGGIO RISULTATI
+        # ----------------------------------------------------
+
+        results[mode] = {
+            "input_features": data.x.shape[1],
+            "best_epoch": history["best_epoch"],
+            "epochs_trained": history["epochs_trained"],
+            "val_auc": history["best_val_auc"],
+            "val_ap": history["best_val_ap"],
+            "test_auc": test_auc,
+            "test_ap": test_ap
+        }
+
+        # ----------------------------------------------------
+        # 12. OUTPUT
+        # ----------------------------------------------------
+
+        print()
+        print(f"Best epoch:       {history['best_epoch']}")
+        print(f"Validation AUC:   {history['best_val_auc']:.4f}")
+        print(f"Validation AP:    {history['best_val_ap']:.4f}")
+        print(f"Test AUC:         {test_auc:.4f}")
+        print(f"Test AP:          {test_ap:.4f}")
+
+    # ========================================================
+    # TABELLA FINALE
+    # ========================================================
+
+    print("\n" + "=" * 70)
+    print("FEATURE ABLATION RESULTS")
+    print("=" * 70)
+
+    print(
+        f"{'Feature':<15}"
+        f"{'Val AUC':>12}"
+        f"{'Val AP':>12}"
+        f"{'Test AUC':>12}"
+        f"{'Test AP':>12}"
+    )
+
+    print("-" * 70)
+
+    for mode in feature_modes:
+        result = results[mode]
+
+        print(
+            f"{mode:<15}"
+            f"{result['val_auc']:>12.4f}"
+            f"{result['val_ap']:>12.4f}"
+            f"{result['test_auc']:>12.4f}"
+            f"{result['test_ap']:>12.4f}"
+        )
+
+    print("=" * 70)
+
+    return results
+
+
+
+
+
+================================================================================
+FILE: experiments/run_baselines.py
+================================================================================
+
+from experiments.baseline_setup import get_baseline_methods
+from experiments.baseline_evaluation import evaluate_baselines
+from experiments.run_degree_bias import run_degree_bias_experiment
+
+from config import RESULTS_DIR, HITS_K_VALUES, DATASET_NAME
+from experiments.export_results import (
+    export_rows,
+    flatten_degree_bias_results,
+)
+
+
+def run_baseline_experiments(splits, negatives, queries, print_section):
+    """Esegue le baseline sui due grafi previsti dal protocollo."""
+
+    baseline_methods = get_baseline_methods()
+
+    query_positive_edges, query_negative_edges = queries
+    test_edges = splits["test_edges"]
+    test_negative_edges = negatives["test_negative_edges"]
+
+    # Protocollo originale: train_graph.
+    baseline_results, baseline_hits = evaluate_baselines(
+        graph=splits["train_graph"],
+        test_edges=test_edges,
+        test_negative_edges=test_negative_edges,
+        query_positive_edges=query_positive_edges,
+        query_negative_edges=query_negative_edges,
+        baseline_methods=baseline_methods,
+        title="BASELINES - TRAIN GRAPH",
+        print_section=print_section,
+    )
+
+    # Protocollo alternativo: message_passing_graph.
+    (
+        message_passing_baseline_results,
+        message_passing_baseline_hits,
+    ) = evaluate_baselines(
+        graph=splits["message_passing_graph"],
+        test_edges=test_edges,
+        test_negative_edges=test_negative_edges,
+        query_positive_edges=query_positive_edges,
+        query_negative_edges=query_negative_edges,
+        baseline_methods=baseline_methods,
+        title="BASELINES - MESSAGE-PASSING GRAPH",
+        print_section=print_section,
+    )
+
+
+    baseline_rows = []
+
+    for graph_name, results, hits_results in [
+        (
+            "train_graph",
+            baseline_results,
+            baseline_hits,
+        ),
+        (
+            "message_passing_graph",
+            message_passing_baseline_results,
+            message_passing_baseline_hits,
+        ),
+    ]:
+        for baseline, metrics in results.items():
+            row = {
+                "graph": graph_name,
+                "baseline": baseline,
+                "auc": metrics["auc"],
+                "ap": metrics["ap"],
+            }
+
+            for k in HITS_K_VALUES:
+                row[f"hits@{k}"] = hits_results[baseline][k]
+
+            baseline_rows.append(row)
+
+    export_rows(
+        baseline_rows,
+        RESULTS_DIR / f"{DATASET_NAME}_baseline_results.csv",
+    )
+
+    return {
+        "methods": baseline_methods,
+        "train_results": baseline_results,
+        "train_hits": baseline_hits,
+        "message_passing_results": message_passing_baseline_results,
+        "message_passing_hits": message_passing_baseline_hits,
+    }
+
+
+
+def run_additional_baseline_analyses(
+    splits,
+    negatives,
+    methods,
+    print_section,
+):
+
+    degree_bias_results = run_degree_bias_experiment(
+        train_graph=splits["train_graph"],
+        positive_edges=splits["test_edges"],
+        negative_edges=negatives["test_negative_edges"],
+        scoring_functions=methods,
+    )
+
+    export_rows(
+        flatten_degree_bias_results(degree_bias_results),
+        RESULTS_DIR / f"{DATASET_NAME}_degree_bias_results.csv",
+    )
+
+    return degree_bias_results
+
+
+================================================================================
+FILE: experiments/run_degree_bias.py
+================================================================================
+
+import math
+import networkx as nx
+
+from sklearn.metrics import (
+roc_auc_score,
+average_precision_score,
+)
+
+from src.evaluation import to_list
+
+QUARTILES = ("Q1", "Q2", "Q3", "Q4")
+
+
+
+def compute_edge_degree(G: nx.Graph, edges):
+    """
+    Calcola il grado medio degli estremi di ogni arco.
+
+    ```
+    Il grado è calcolato sul grafo G, che nell'esperimento
+    deve essere il grafo di training.
+    """
+
+    edge_degrees = []
+
+    for u, v in edges:
+        degree_u = G.degree(u)
+        degree_v = G.degree(v)
+
+        edge_degrees.append(
+            (degree_u + degree_v) / 2
+        )
+
+    return edge_degrees
+
+
+def assign_degree_quartiles(edge_degrees):
+    """
+    Assegna gli archi a Q1, Q2, Q3 o Q4 in base al grado medio.
+
+    ```
+    I valori uguali ricevono la stessa assegnazione.
+    Per questo motivo, in presenza di molti pareggi,
+    i quartili possono avere dimensioni diverse o essere vuoti.
+    """
+
+    edge_degrees = list(edge_degrees)
+
+    if not edge_degrees:
+        return []
+
+    sorted_degrees = sorted(edge_degrees)
+    n = len(sorted_degrees)
+
+    q1 = sorted_degrees[int(n * 0.25)]
+    q2 = sorted_degrees[int(n * 0.50)]
+    q3 = sorted_degrees[int(n * 0.75)]
+
+    quartiles = []
+
+    for degree in edge_degrees:
+        if degree <= q1:
+            quartiles.append("Q1")
+        elif degree <= q2:
+            quartiles.append("Q2")
+        elif degree <= q3:
+            quartiles.append("Q3")
+        else:
+            quartiles.append("Q4")
+
+    return quartiles
+
+
+def evaluate_degree_bias(
+        positive_edges,
+        negative_edges,
+        positive_scores,
+        negative_scores,
+        G: nx.Graph,):
+    """
+    Valuta AUC e AP per quartile di grado medio degli estremi.
+
+    ```
+    Le soglie dei quartili sono determinate considerando
+    insieme gli archi positivi e negativi.
+
+    G deve essere il grafo di training.
+    """
+
+    positive_edges = list(positive_edges)
+    negative_edges = list(negative_edges)
+
+    positive_scores = to_list(positive_scores)
+    negative_scores = to_list(negative_scores)
+
+    if len(positive_edges) != len(positive_scores):
+        raise ValueError(
+            "Numero di archi positivi e score positivi non coerente."
+        )
+
+    if len(negative_edges) != len(negative_scores):
+        raise ValueError(
+            "Numero di archi negativi e score negativi non coerente."
+        )
+
+    all_edges = positive_edges + negative_edges
+
+    all_degrees = compute_edge_degree(
+        G,
+        all_edges,
+    )
+
+    quartiles = assign_degree_quartiles(all_degrees)
+
+    positive_count = len(positive_edges)
+
+    positive_quartiles = quartiles[:positive_count]
+    negative_quartiles = quartiles[positive_count:]
+
+    results = {}
+
+    for quartile in QUARTILES:
+        positive_indices = [
+            i
+            for i, group in enumerate(positive_quartiles)
+            if group == quartile
+        ]
+
+        negative_indices = [
+            i
+            for i, group in enumerate(negative_quartiles)
+            if group == quartile
+        ]
+
+        q_positive_scores = [
+            positive_scores[i]
+            for i in positive_indices
+        ]
+
+        q_negative_scores = [
+            negative_scores[i]
+            for i in negative_indices
+        ]
+
+        if (
+            not q_positive_scores
+            or not q_negative_scores
+        ):
+            results[quartile] = {
+                "positive_edges": len(q_positive_scores),
+                "negative_edges": len(q_negative_scores),
+                "auc": math.nan,
+                "ap": math.nan,
+            }
+            continue
+
+        scores = q_positive_scores + q_negative_scores
+
+        labels = (
+            [1] * len(q_positive_scores)
+            + [0] * len(q_negative_scores)
+        )
+
+        results[quartile] = {
+            "positive_edges": len(q_positive_scores),
+            "negative_edges": len(q_negative_scores),
+            "auc": roc_auc_score(labels, scores),
+            "ap": average_precision_score(labels, scores),
+        }
+
+    return results
+
+
+def run_degree_bias_experiment(
+        train_graph: nx.Graph,
+        positive_edges,
+        negative_edges,
+        scoring_functions: dict,
+        ):
+    """
+    Esegue l'analisi degree-bias sui baseline specificati.
+
+    ```
+    Parameters
+    ----------
+    train_graph : networkx.Graph
+        Grafo di training, usato sia per gli score
+        sia per calcolare i gradi degli estremi.
+
+    positive_edges, negative_edges : iterable
+        Archi positivi e negativi del test.
+
+    scoring_functions : dict
+        Dizionario {nome_baseline: funzione_di_scoring}.
+
+    Returns
+    -------
+    dict
+        Risultati per baseline e quartile.
+    """
+
+    positive_edges = list(positive_edges)
+    negative_edges = list(negative_edges)
+
+    if not positive_edges or not negative_edges:
+        raise ValueError(
+            "Il test deve contenere archi positivi e negativi."
+        )
+
+    if not scoring_functions:
+        raise ValueError(
+            "Specificare almeno un baseline da valutare."
+        )
+
+    print("\n" + "=" * 65)
+    print("DEGREE-BIAS ANALYSIS")
+    print("=" * 65)
+
+    print(
+        "Il grado degli estremi viene calcolato "
+        "esclusivamente sul grafo di training."
+    )
+
+    all_results = {}
+
+    for name, scoring_function in scoring_functions.items():
+        print(f"\nBaseline: {name}")
+
+        positive_scores = scoring_function(
+            train_graph,
+            positive_edges,
+        )
+
+        negative_scores = scoring_function(
+            train_graph,
+            negative_edges,
+        )
+
+        results = evaluate_degree_bias(
+            positive_edges=positive_edges,
+            negative_edges=negative_edges,
+            positive_scores=positive_scores,
+            negative_scores=negative_scores,
+            G=train_graph,
+        )
+
+        all_results[name] = results
+
+        print(
+            f"{'Quartile':<10}"
+            f"{'Positivi':>12}"
+            f"{'Negativi':>12}"
+            f"{'AUC':>12}"
+            f"{'AP':>12}"
+        )
+
+        for quartile in QUARTILES:
+            row = results[quartile]
+
+            auc_text = (
+                f"{row['auc']:.4f}"
+                if math.isfinite(row["auc"])
+                else "N/A"
+            )
+
+            ap_text = (
+                f"{row['ap']:.4f}"
+                if math.isfinite(row["ap"])
+                else "N/A"
+            )
+
+            print(
+                f"{quartile:<10}"
+                f"{row['positive_edges']:>12}"
+                f"{row['negative_edges']:>12}"
+                f"{auc_text:>12}"
+                f"{ap_text:>12}"
+            )
+
+    print("\nDegree-bias analysis completed.")
+
+    return all_results
+
+
+
+
+================================================================================
+FILE: experiments/run_gnn.py
+================================================================================
+
+import numpy as np
+import torch
+
+
+from src.gnn import (
+    networkx_to_pyg,
+    GraphSAGE,
+    MLPDecoder,
+    DotProductDecoder,
+    train_gnn,
+    predict_edges,
+    predict_query_candidates,
+    prepare_edges
+)
+
+from src.evaluation import hits_at_k, evaluate_scores
+
+
+from config import (
+    DEVICE,
+    GNN_SEEDS,
+    RESULTS_DIR,
+    DATASET_NAME,
+    HIDDEN_CHANNELS,
+    OUT_CHANNELS,
+    DECODER_HIDDEN_DIM,
+    LEARNING_RATE,
+    EPOCHS,
+    ABLATION_EPOCHS,
+    ABLATION_SEED,
+    ABLATION_LEARNING_RATE,
+    HITS_K_VALUES
+)
+
+from src.utils.sanity_checks import verify_feature_source
+from experiments.run_ablation import run_feature_ablation
+
+
+from experiments.export_results import export_rows
+
+
+
+EVALUATION_METRICS = [
+    "val_auc", "val_ap", "test_auc", "test_ap"
+] + [f"hits@{k}" for k in HITS_K_VALUES]
+
+
+def prepare_gnn_data(message_passing_graph, print_section):
+    """Prepara i dati PyTorch Geometric per gli esperimenti GNN."""
+    print_section("GNN DATA")
+
+    data, _ = networkx_to_pyg(
+        message_passing_graph,
+        feature_mode="full",
+    )
+
+    data = data.to(DEVICE)
+
+    print(f"Nodes: {data.num_nodes}")
+    print(f"Node features: {data.x.shape[1]}")
+    print(f"Message-passing edges: {data.edge_index.shape[1]}")
+
+    print_section("FEATURE SOURCE CHECK")
+
+    return data
+
+
+def run_gnn_multiseed(
+    message_passing_graph,
+    supervised_train_edges,
+    supervised_train_negative_edges,
+    val_edges,
+    val_negative_edges,
+    test_edges,
+    test_negative_edges,
+    query_positive_edges,
+    query_negative_edges,
+    seeds=(1, 2, 3, 4, 5),
+    hidden_channels=64,
+    out_channels=32,
+    decoder_hidden_dim=64,
+    epochs=500,
+    learning_rate=0.001,
+    decoder_type="mlp",
+    device="cpu"
+):
+    """
+    Esegue GraphSAGE + MLP su più seed.
+
+    L'encoder osserva esclusivamente message_passing_graph.
+    Il decoder viene addestrato sugli archi supervisionati,
+    che non sono presenti nel grafo osservato.
+
+    La validation seleziona il checkpoint migliore.
+    Il test viene utilizzato per la valutazione finale.
+    """
+
+    if decoder_type not in ("mlp", "dot_product"):
+        raise ValueError(
+            "decoder_type deve essere 'mlp' oppure 'dot_product'."
+        )
+
+    results = []
+
+    # --------------------------------------------------------
+    # DATA
+    # --------------------------------------------------------
+
+    data, node_to_idx = networkx_to_pyg(
+        message_passing_graph,
+        feature_mode="full"
+    )
+
+    data = data.to(device)
+
+    # --------------------------------------------------------
+    # MULTI-SEED
+    # --------------------------------------------------------
+
+    for seed in seeds:
+
+        print()
+        print("=" * 70)
+        print(f"GRAPHSAGE + {decoder_type.upper()} - SEED {seed}")
+        print("=" * 70)
+
+        # ----------------------------------------------------
+        # RIPRODUCIBILITY
+        # ----------------------------------------------------
+
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+
+        # ----------------------------------------------------
+        # MODEL
+        # ----------------------------------------------------
+
+        model = GraphSAGE(
+            in_channels=data.x.shape[1],
+            hidden_channels=hidden_channels,
+            out_channels=out_channels
+        ).to(device)
+
+        if decoder_type == "mlp":
+            decoder = MLPDecoder(
+                embedding_dim=out_channels,
+                hidden_dim=decoder_hidden_dim
+            ).to(device)
+
+        else:
+            decoder = DotProductDecoder().to(device)
+
+        # ----------------------------------------------------
+        # OPTIMIZER
+        # ----------------------------------------------------
+
+        optimizer = torch.optim.Adam(
+            list(model.parameters())
+            + list(decoder.parameters()),
+            lr=learning_rate
+        )
+
+        # ----------------------------------------------------
+        # TRAINING
+        # ----------------------------------------------------
+
+        history = train_gnn(
+            model=model,
+            decoder=decoder,
+            data=data,
+            train_edges=supervised_train_edges,
+            train_negative_edges=supervised_train_negative_edges,
+            val_edges=val_edges,
+            val_negative_edges=val_negative_edges,
+            node_to_idx=node_to_idx,
+            optimizer=optimizer,
+            epochs=epochs,
+            keep_ratio=1.0,
+            seed=seed
+        )
+
+        # ----------------------------------------------------
+        # TEST EDGE PREPARATION
+        # ----------------------------------------------------
+
+        test_pos_edge_index, _ = prepare_edges(
+            test_edges,
+            [],
+            node_to_idx
+        )
+
+        test_neg_edge_index, _ = prepare_edges(
+            [],
+            test_negative_edges,
+            node_to_idx
+        )
+
+        test_pos_edge_index = test_pos_edge_index.to(device)
+        test_neg_edge_index = test_neg_edge_index.to(device)
+
+
+        test_edge_index = torch.cat(
+            [
+                test_pos_edge_index,
+                test_neg_edge_index
+            ],
+            dim=1
+        )
+
+        # ----------------------------------------------------
+        # TEST PREDICTION
+        # ----------------------------------------------------
+
+        test_scores = predict_edges(
+            model,
+            decoder,
+            data,
+            test_edge_index
+        )
+
+        # ----------------------------------------------------
+        # TEST METRICS
+        # ----------------------------------------------------
+        
+        n_positive = len(test_edges)
+        
+        test_metrics = evaluate_scores(
+            pos_scores=test_scores[:n_positive],
+            neg_scores=test_scores[n_positive:]
+        )
+        
+        test_auc = test_metrics["auc"]
+        test_ap = test_metrics["ap"]
+
+        # ----------------------------------------------------
+        # QUERY-BASED HITS@K
+        # ----------------------------------------------------
+
+        print()
+        print("Computing query-based Hits@K...")
+
+        (
+            query_positive_scores,
+            query_negative_scores
+        ) = predict_query_candidates(
+            model=model,
+            decoder=decoder,
+            data=data,
+            query_positive_edges=query_positive_edges,
+            query_negative_edges=query_negative_edges,
+            node_to_idx=node_to_idx
+        )
+
+        hits_results = {
+            f"hits@{k}": hits_at_k(query_positive_scores, query_negative_scores, k)
+            for k in HITS_K_VALUES
+        }
+
+        # ----------------------------------------------------
+        # SAVE RESULT
+        # ----------------------------------------------------
+
+        result = {
+            "decoder": decoder_type,
+            "seed": seed,
+            "best_epoch": history["best_epoch"],
+            "epochs_trained": history["epochs_trained"],
+            "val_auc": history["best_val_auc"],
+            "val_ap": history["best_val_ap"],
+            "test_auc": test_auc,
+            "test_ap": test_ap,
+        }
+        result.update(hits_results)
+
+        results.append(result)
+
+        # ----------------------------------------------------
+        # PRINT RESULT
+        # ----------------------------------------------------
+
+        print()
+        print(f"Seed:       {seed}")
+        print(f"Best epoch: {history['best_epoch']}")
+        print(f"Val AUC:    {history['best_val_auc']:.4f}")
+        print(f"Val AP:     {history['best_val_ap']:.4f}")
+        print(f"Test AUC:   {test_auc:.4f}")
+        print(f"Test AP:    {test_ap:.4f}")
+        for k in HITS_K_VALUES:
+            print(f"Hits@{k}:    {hits_results[f'hits@{k}']:.4f}")
+
+    if not results:
+        raise ValueError("La lista dei seed non può essere vuota.")
+
+    # ========================================================
+    # MULTI-SEED SUMMARY
+    # ========================================================
+
+    print()
+    print("=" * 70)
+    print("MULTI-SEED SUMMARY")
+    print("=" * 70)
+
+    
+    summary = {}
+
+    for metric in EVALUATION_METRICS:
+
+        values = np.array(
+            [result[metric] for result in results]
+        )
+
+        summary[metric] = {
+            "mean": float(np.mean(values)),
+            "std": float(np.std(values))
+        }
+
+        print(
+            f"{metric:<10}: "
+            f"{np.mean(values):.4f} ± {np.std(values):.4f}"
+        )
+
+    # --------------------------------------------------------
+    # RANGE
+    # --------------------------------------------------------
+
+    for metric in ["test_auc", "test_ap"] + [f"hits@{k}" for k in HITS_K_VALUES]:
+
+        values = [
+            result[metric]
+            for result in results
+        ]
+
+        print()
+        print(f"{metric} range:")
+        print(f"  min = {np.min(values):.4f}")
+        print(f"  max = {np.max(values):.4f}")
+
+    return results
+
+
+
+
+def run_gnn_experiments(
+    splits,
+    negatives,
+    queries,
+    original_graph,
+    data,
+    print_section,
+):
+    message_passing_graph = splits["message_passing_graph"]
+    supervised_train_edges = splits["supervised_train_edges"]
+    supervised_train_negative_edges = negatives[
+        "supervised_train_negative_edges"
+    ]
+    val_edges = splits["val_edges"]
+    test_edges = splits["test_edges"]
+
+    if not verify_feature_source(
+        original_graph,
+        message_passing_graph,
+        data,
+    ):
+        raise RuntimeError(
+            "Feature GNN non coerenti con il grafo di training."
+        )
+
+    # --------------------------------------------------------
+    # Feature ablation
+    # --------------------------------------------------------
+
+
+    feature_ablation_results = run_feature_ablation(
+        message_passing_graph=message_passing_graph,
+        supervised_train_edges=supervised_train_edges,
+        supervised_train_negative_edges=supervised_train_negative_edges,
+        val_edges=val_edges,
+        val_negative_edges=negatives["val_negative_edges"],
+        test_edges=test_edges,
+        test_negative_edges=negatives["test_negative_edges"],
+        hidden_channels=HIDDEN_CHANNELS,
+        out_channels=OUT_CHANNELS,
+        decoder_hidden_dim=DECODER_HIDDEN_DIM,
+        learning_rate=ABLATION_LEARNING_RATE,
+        epochs=ABLATION_EPOCHS,
+        seed=ABLATION_SEED,
+        device=DEVICE,
+    )
+
+
+    feature_ablation_rows = []
+
+    for mode, metrics in feature_ablation_results.items():
+        feature_ablation_rows.append({
+            "feature_mode": mode,
+            "input_features": metrics["input_features"],
+            "best_epoch": metrics["best_epoch"],
+            "epochs_trained": metrics["epochs_trained"],
+            "val_auc": metrics["val_auc"],
+            "val_ap": metrics["val_ap"],
+            "test_auc": metrics["test_auc"],
+            "test_ap": metrics["test_ap"],
+        })
+
+    export_rows(
+        feature_ablation_rows,
+        RESULTS_DIR / f"{DATASET_NAME}_feature_ablation_results.csv",
+    )
+
+    # --------------------------------------------------------
+    # Decoder comparison
+    # --------------------------------------------------------
+
+    print_section("GNN DECODER COMPARISON")
+
+    query_positive_edges, query_negative_edges = queries
+    gnn_results = {}
+
+    for decoder_type in ("mlp", "dot_product"):
+        print_section(f"GRAPHSAGE + {decoder_type.upper()}")
+
+        gnn_results[decoder_type] = run_gnn_multiseed(
+            message_passing_graph=message_passing_graph,
+            supervised_train_edges=supervised_train_edges,
+            supervised_train_negative_edges=supervised_train_negative_edges,
+            val_edges=val_edges,
+            val_negative_edges=negatives["val_negative_edges"],
+            test_edges=test_edges,
+            test_negative_edges=negatives["test_negative_edges"],
+            query_positive_edges=query_positive_edges,
+            query_negative_edges=query_negative_edges,
+            seeds=GNN_SEEDS,
+            hidden_channels=HIDDEN_CHANNELS,
+            out_channels=OUT_CHANNELS,
+            decoder_hidden_dim=DECODER_HIDDEN_DIM,
+            epochs=EPOCHS,
+            learning_rate=LEARNING_RATE,
+            decoder_type=decoder_type,
+            device=DEVICE,
+        )
+
+    return {
+        "feature_ablation": feature_ablation_results,
+        "decoder_comparison": gnn_results,
+    }
+
+
+
+
+def save_gnn_results(gnn_results, print_section):
+    """Salva risultati per seed e riepilogo aggregato in formato CSV."""
+    print_section("GNN FINAL RESULTS")
+
+    
+
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    all_gnn_results = [
+        result
+        for decoder_results in gnn_results.values()
+        for result in decoder_results
+    ]
+
+    if not all_gnn_results:
+        raise RuntimeError("Nessun risultato GNN disponibile.")
+
+    detailed_path = RESULTS_DIR / f"{DATASET_NAME}_gnn_decoder_results.csv"
+
+    export_rows(
+        all_gnn_results,
+        detailed_path,
+    )
+
+    summary_rows = []
+
+    print()
+    header = f"{'Model':<25}{'Test AUC':>23}{'Test AP':>23}"
+    header += "".join([f"Hits@{k}".rjust(23) for k in HITS_K_VALUES])
+    print(header)
+    print("-" * len(header))
+
+    for decoder_type, decoder_results in gnn_results.items():
+        if not decoder_results:
+            continue
+
+        values = {
+            metric: np.asarray(
+                [result[metric] for result in decoder_results],
+                dtype=float,
+            )
+            for metric in EVALUATION_METRICS
+        }
+
+        label = (
+            "GraphSAGE + MLP"
+            if decoder_type == "mlp"
+            else "GraphSAGE + Dot Product"
+        )
+
+        displayed_metrics = (
+            "test_auc",
+            "test_ap",
+        ) + tuple(f"hits@{k}" for k in HITS_K_VALUES)
+
+        print(
+            f"{label:<25}"
+            + "".join(
+                f"{np.mean(values[m]):.4f} ± {np.std(values[m]):.4f}".rjust(23)
+                for m in displayed_metrics
+            )
+        )
+
+        row = {
+            "decoder": decoder_type,
+            "num_seeds": len(decoder_results),
+        }
+
+        for metric in EVALUATION_METRICS:
+            row[f"{metric}_mean"] = float(np.mean(values[metric]))
+            row[f"{metric}_std"] = float(np.std(values[metric]))
+
+        summary_rows.append(row)
+
+    summary_path = RESULTS_DIR / f"{DATASET_NAME}_gnn_decoder_summary.csv"
+
+    export_rows(
+        summary_rows,
+        summary_path,
+    )
+
+
+================================================================================
+FILE: main.py
+================================================================================
+
+import argparse
+
+from config import DATASET_PATH, SEED, DATASET_NAME
+
+from src.reporting import (
+    print_section,
+    print_graph_summary,
+    print_baseline_results,
+)
+from src.reproducibility import set_global_seed
+from src.pipeline_data import (
+    prepare_graph_splits,
+    prepare_negative_edges,
+    prepare_hits_queries,
+)
+from src.utils.pipeline_checks import run_sanity_checks
+from src.data_loader import load_graph
+from src.graph_utils import (
+    graph_statistics,
+    degree_statistics,
+    plot_degree_distribution,
+)
+from experiments.run_baselines import (
+    run_baseline_experiments,
+    run_additional_baseline_analyses,
+)
+from experiments.run_gnn import (
+    prepare_gnn_data,
+    run_gnn_experiments,
+    save_gnn_results,
+)
+
+
+def parse_args():
+    """Legge la modalità di esecuzione richiesta."""
+    parser = argparse.ArgumentParser(
+        description="Pipeline di link prediction con baseline e GNN."
+    )
+    parser.add_argument(
+        "--run",
+        choices=("all", "baselines", "gnn"),
+        default="all",
+        help="Esperimenti da eseguire (default: all).",
+    )
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+
+    set_global_seed(SEED)
+
+    # 1. Load and inspect the graph.
+    print_section("LOADING GRAPH")
+    print(f"Dataset: {DATASET_PATH}")
+
+    graph = load_graph(DATASET_PATH)
+
+    print_section("GRAPH STATISTICS")
+    print_graph_summary(graph, graph_statistics, degree_statistics)
+
+    print_section("DEGREE DISTRIBUTION")
+    plot_degree_distribution(graph, f"Degree Distribution - {DATASET_NAME}")
+
+    # 2. Split positive edges and generate negative examples.
+    splits = prepare_graph_splits(graph)
+    negatives = prepare_negative_edges(graph, splits)
+
+    # 3. Validate the data protocol before experiments.
+    run_sanity_checks(graph, splits, negatives, print_section)
+
+    # 4. Prepare the fixed Hits@K candidate sets.
+    queries = prepare_hits_queries(graph, splits["test_edges"])
+
+    # 5. Run baseline experiments when requested.
+    if args.run in ("all", "baselines"):
+        baseline_results = run_baseline_experiments(
+            splits=splits,
+            negatives=negatives,
+            queries=queries,
+            print_section=print_section,
+        )
+
+        run_additional_baseline_analyses(
+            splits=splits,
+            negatives=negatives,
+            methods=baseline_results["methods"],
+            print_section=print_section,
+        )
+
+        print_baseline_results(
+            "FINAL COMPARISON - BASELINES ON TRAIN GRAPH",
+            baseline_results["train_results"],
+            baseline_results["train_hits"],
+        )
+
+        print_baseline_results(
+            "FINAL COMPARISON - BASELINES ON MESSAGE-PASSING GRAPH",
+            baseline_results["message_passing_results"],
+            baseline_results["message_passing_hits"],
+        )
+
+    # 6. Run GNN experiments when requested.
+    if args.run in ("all", "gnn"):
+        data = prepare_gnn_data(
+            splits["message_passing_graph"],
+            print_section=print_section,
+        )
+
+        gnn_experiments = run_gnn_experiments(
+            splits,
+            negatives,
+            queries,
+            graph,
+            data,
+            print_section=print_section,
+        )
+
+        save_gnn_results(
+            gnn_experiments["decoder_comparison"],
+            print_section,
+        )
+
+    print()
+    print("=" * 70)
+    print(f"PIPELINE COMPLETED - MODE: {args.run.upper()}")
+    print("=" * 70)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+================================================================================
+FILE: src/baseline.py
+================================================================================
+
+import networkx as nx
+from math import log
+
+def common_neighbors_scores(G: nx.Graph, edges):
+    return [len(set(G[u]) & set(G[v])) for u, v in edges]
+
+
+def jaccard_scores(G: nx.Graph, edges):
+    return[
+        score for _, _ , score in nx.jaccard_coefficient(G,edges)
+    ]
+
+
+def adamic_adar_scores(G: nx.Graph, edges):
+    scores = []
+
+    for u, v in edges:
+        common = set(G.neighbors(u)) & set(G.neighbors(v))
+
+        score = sum(
+            1 / log(G.degree(w))
+            for w in common
+            if G.degree(w) > 1
+        )
+
+        scores.append(score)
+
+    return scores
+
+
+def preferential_attachment_scores(G: nx.Graph, edges):
+    return[
+        score for _, _, score in nx.preferential_attachment(G, edges)
+    ]
+
+
+================================================================================
+FILE: src/data_loader.py
+================================================================================
+
+import networkx as nx
+
+
+def load_graph(path):
+    """
+    Carica il dataset come grafo non orientato
+    """
+    G = nx.read_edgelist(
+        path,
+        nodetype=int,
+        comments='#'
+    )
+
+    
+    G.remove_edges_from(nx.selfloop_edges(G))
+
+    return G
+
+
+================================================================================
+FILE: src/evaluation.py
+================================================================================
+
+
+import numpy as np
+from sklearn.metrics import roc_auc_score, average_precision_score
+
+
+def to_list(values):
+    """
+    Converte un tensor PyTorch, un array NumPy o un iterabile
+    in una lista Python.
+    """
+
+    if hasattr(values, "detach"):
+        values = values.detach().cpu().numpy()
+
+    if isinstance(values, np.ndarray):
+        return values.tolist()
+
+    return list(values)
+
+
+def evaluate_scores(pos_scores, neg_scores):
+    """
+    Calcola ROC-AUC e Average Precision.
+
+    Parameters
+    ----------
+    pos_scores : iterable
+        Score degli archi positivi.
+
+    neg_scores : iterable
+        Score degli archi negativi.
+
+    Returns
+    -------
+    dict
+        Dizionario contenente AUC e AP.
+    """
+
+    pos_scores = np.asarray(to_list(pos_scores), dtype=np.float64).reshape(-1)
+    neg_scores = np.asarray(to_list(neg_scores), dtype=np.float64).reshape(-1)
+
+    if len(pos_scores) == 0 or len(neg_scores) == 0:
+        raise ValueError(
+            "Sono necessari almeno uno score positivo e uno negativo."
+        )
+
+    if not np.all(np.isfinite(pos_scores)) or not np.all(np.isfinite(neg_scores)):
+        raise ValueError("Gli score devono essere tutti finiti.")
+
+    y_true = np.concatenate([
+        np.ones(len(pos_scores), dtype=np.int8),
+        np.zeros(len(neg_scores), dtype=np.int8),
+    ])
+
+    y_scores = np.concatenate([pos_scores, neg_scores])
+
+    auc = roc_auc_score(y_true, y_scores)
+    ap = average_precision_score(y_true, y_scores)
+
+    return {
+        "auc": float(auc),
+        "ap": float(ap),
+    }
+
+
+def hits_at_k(query_positive_scores, query_negative_scores, k, tie="pessimistic"):
+    """
+    Calcola Hits@K in modalità query-based.
+
+    Ogni query contiene un positivo e uno o più candidati negativi.
+
+    Parametri
+    ---------
+    query_positive_scores : iterable
+        Score del vero arco per ogni query.
+
+    query_negative_scores : iterable of iterables
+        Score dei candidati negativi per ogni query.
+
+    k : int
+        Numero massimo di posizioni considerate.
+
+    tie : str
+        Politica per gli score a pari merito:
+        - "pessimistic": tutti i negativi a pari score precedono il positivo;
+        - "average": metà dei negativi a pari score precede il positivo;
+        - "optimistic": nessun negativo a pari score precede il positivo.
+
+    Returns
+    -------
+    float
+        Frazione di query per cui il positivo raggiunge una posizione <= k.
+    """
+
+    if isinstance(k, bool) or not isinstance(k, (int, np.integer)) or k <= 0:
+        raise ValueError("k deve essere un intero maggiore di 0.")
+
+    if tie not in {"pessimistic", "average", "optimistic"}:
+        raise ValueError(
+            "tie deve essere 'pessimistic', 'average' oppure 'optimistic'."
+        )
+
+    positive_scores = np.asarray(
+        to_list(query_positive_scores),
+        dtype=np.float64,
+    ).reshape(-1)
+
+    negative_rows = [
+        np.asarray(to_list(scores), dtype=np.float64).reshape(-1)
+        for scores in query_negative_scores
+    ]
+
+    if len(positive_scores) != len(negative_rows):
+        raise ValueError(
+            "Il numero di score positivi deve coincidere "
+            "con il numero di query negative."
+        )
+
+    if len(positive_scores) == 0:
+        return 0.0
+
+    if any(len(row) == 0 for row in negative_rows):
+        raise ValueError("Ogni query deve avere almeno un candidato negativo.")
+
+    if not np.all(np.isfinite(positive_scores)):
+        raise ValueError("Gli score positivi devono essere tutti finiti.")
+
+    if not all(np.all(np.isfinite(row)) for row in negative_rows):
+        raise ValueError("Gli score negativi devono essere tutti finiti.")
+
+    # Tutte le query devono avere lo stesso numero di candidati.
+    candidate_counts = {len(row) for row in negative_rows}
+
+    if len(candidate_counts) != 1:
+        raise ValueError(
+            "Tutte le query devono avere lo stesso numero "
+            "di candidati negativi."
+        )
+
+    negative_scores = np.stack(negative_rows, axis=0)
+
+    # Conteggio vettorizzato dei negativi che precedono il positivo.
+    greater = np.sum(
+        negative_scores > positive_scores[:, None],
+        axis=1,
+    )
+
+    ties = np.sum(
+        negative_scores == positive_scores[:, None],
+        axis=1,
+    )
+
+    if tie == "pessimistic":
+        rank = 1 + greater + ties
+    elif tie == "average":
+        rank = 1 + greater + 0.5 * ties
+    else:
+        rank = 1 + greater
+
+    return float(np.mean(rank <= k))
+
+
+
+================================================================================
+FILE: src/gnn/__init__.py
+================================================================================
+
+from .data import (
+    networkx_to_pyg,
+    prepare_edges,
+    sample_message_passing_edges
+)
+
+from .model import GraphSAGE
+
+
+from .decoder import MLPDecoder, DotProductDecoder
+
+from .training import (
+    compute_loss,
+    train_gnn
+)
+
+from .prediction import (
+    score_edges_from_embeddings,
+    predict_edges,
+    predict_query_candidates
+)
+
+
+================================================================================
+FILE: src/gnn/data.py
+================================================================================
+
+import random
+import networkx as nx
+import torch
+from torch_geometric.data import Data
+
+def prepare_edges(
+    positive_edges,
+    negative_edges,
+    node_to_idx
+):
+    """
+    Converte archi NetworkX in edge_index PyTorch Geometric.
+
+    Gli archi positivi vengono assegnati label 1.
+    Gli archi negativi vengono assegnati label 0.
+    """
+
+    edges = []
+    labels = []
+
+    for u, v in positive_edges:
+        edges.append([
+            node_to_idx[u],
+            node_to_idx[v]
+        ])
+        labels.append(1.0)
+
+    for u, v in negative_edges:
+        edges.append([
+            node_to_idx[u],
+            node_to_idx[v]
+        ])
+        labels.append(0.0)
+
+    if len(edges) == 0:
+
+        edge_index = torch.empty(
+            (2, 0),
+            dtype=torch.long
+        )
+
+        labels = torch.empty(
+            (0,),
+            dtype=torch.float
+        )
+
+        return edge_index, labels
+
+    edge_index = torch.tensor(
+        edges,
+        dtype=torch.long
+    ).t().contiguous()
+
+    labels = torch.tensor(
+        labels,
+        dtype=torch.float
+    )
+
+    return edge_index, labels
+
+
+def sample_message_passing_edges(
+    edge_index,
+    keep_ratio,
+    seed
+):
+    """
+    Seleziona casualmente una percentuale degli archi
+    utilizzati per il message passing.
+    """
+
+    if not 0.0 <= keep_ratio <= 1.0:
+        raise ValueError(
+            "keep_ratio deve essere compreso tra 0 e 1."
+        )
+
+    if edge_index.numel() == 0:
+
+        return torch.empty(
+            (2, 0),
+            dtype=edge_index.dtype,
+            device=edge_index.device
+        )
+
+    if keep_ratio == 1.0:
+        return edge_index
+
+    if keep_ratio == 0.0:
+
+        return torch.empty(
+            (2, 0),
+            dtype=edge_index.dtype,
+            device=edge_index.device
+        )
+
+    edges = edge_index.t().tolist()
+
+    undirected_edges = set()
+
+    for u, v in edges:
+
+        edge = tuple(sorted((u, v)))
+
+        undirected_edges.add(edge)
+
+    undirected_edges = list(
+        undirected_edges
+    )
+
+    rng = random.Random(seed)
+
+    rng.shuffle(
+        undirected_edges
+    )
+
+    n_keep = int(
+        len(undirected_edges)
+        * keep_ratio
+    )
+
+    selected_edges = (
+        undirected_edges[:n_keep]
+    )
+
+    directed_edges = []
+
+    for u, v in selected_edges:
+
+        directed_edges.append(
+            [u, v]
+        )
+
+        directed_edges.append(
+            [v, u]
+        )
+
+    if len(directed_edges) == 0:
+
+        return torch.empty(
+            (2, 0),
+            dtype=edge_index.dtype,
+            device=edge_index.device
+        )
+
+    return torch.tensor(
+        directed_edges,
+        dtype=edge_index.dtype,
+        device=edge_index.device
+    ).t().contiguous()
+
+
+
+def networkx_to_pyg(G, feature_mode="full"):
+    """
+    Converte un grafo NetworkX in un grafo PyTorch Geometric.
+
+    Parameters
+    ----------
+    G : networkx.Graph
+        Grafo da convertire.
+
+    feature_mode : str
+        Modalità delle feature:
+        - "full": degree + clustering
+        - "degree": solo degree
+        - "clustering": solo clustering
+        - "constant": feature costante
+
+    Returns
+    -------
+    data : torch_geometric.data.Data
+        Grafo PyG con feature nodali ed edge_index.
+
+    node_to_idx : dict
+        Mappa node ID -> indice PyTorch Geometric.
+    """
+
+    if feature_mode not in {
+        "full",
+        "degree",
+        "clustering",
+        "constant"
+    }:
+        raise ValueError(
+            f"Feature mode non valido: {feature_mode}"
+        )
+
+    # --------------------------------------------------
+    # NODE MAPPING
+    # --------------------------------------------------
+
+    nodes = list(G.nodes())
+
+    node_to_idx = {
+        node: i
+        for i, node in enumerate(nodes)
+    }
+
+    # --------------------------------------------------
+    # EDGE INDEX
+    # --------------------------------------------------
+
+    edges = []
+
+    for u, v in G.edges():
+
+        u_idx = node_to_idx[u]
+        v_idx = node_to_idx[v]
+
+        # Grafo non orientato:
+        # inseriamo entrambe le direzioni.
+        edges.append([u_idx, v_idx])
+        edges.append([v_idx, u_idx])
+
+    edge_index = torch.tensor(
+        edges,
+        dtype=torch.long
+    ).t().contiguous()
+
+    # --------------------------------------------------
+    # NODE FEATURES
+    # --------------------------------------------------
+
+    if feature_mode in {"full", "degree"}:
+
+        degree = dict(G.degree())
+        max_degree = max(degree.values(), default=0)
+
+        if max_degree > 0:
+            normalized_degree = {
+                node: degree[node] / max_degree
+                for node in nodes
+            }
+        else:
+            normalized_degree = {
+                node: 0.0
+                for node in nodes
+            }
+
+    if feature_mode in {"full", "clustering"}:
+        clustering = nx.clustering(G)
+
+    if feature_mode == "full":
+
+        features = [
+            [
+                normalized_degree[node],
+                clustering[node]
+            ]
+            for node in nodes
+        ]
+
+    elif feature_mode == "degree":
+
+        features = [
+            [normalized_degree[node]]
+            for node in nodes
+        ]
+
+    elif feature_mode == "clustering":
+
+        features = [
+            [clustering[node]]
+            for node in nodes
+        ]
+
+    elif feature_mode == "constant":
+
+        features = [
+            [1.0]
+            for node in nodes
+        ]
+
+    x = torch.tensor(
+        features,
+        dtype=torch.float
+    )
+
+    data = Data(
+        x=x,
+        edge_index=edge_index
+    )
+
+    return data, node_to_idx
+
+
+================================================================================
+FILE: src/gnn/decoder.py
+================================================================================
+
+import torch
+import torch.nn as nn
+
+
+class MLPDecoder(nn.Module):
+
+    def __init__(
+        self,
+        embedding_dim,
+        hidden_dim
+    ):
+        super().__init__()
+
+        self.mlp = nn.Sequential(
+
+            nn.Linear(
+                embedding_dim * 2,
+                hidden_dim
+            ),
+
+            nn.ReLU(),
+
+            nn.Linear(
+                hidden_dim,
+                1
+            )
+        )
+
+    def forward(
+        self,
+        z,
+        edge_index
+    ):
+
+        edge_index = edge_index.long()
+
+        src = edge_index[0]
+        dst = edge_index[1]
+
+        z_src = z[src]
+        z_dst = z[dst]
+
+        product = z_src * z_dst
+
+        difference = torch.abs(
+            z_src - z_dst
+        )
+
+        edge_features = torch.cat(
+            [
+                product,
+                difference
+            ],
+            dim=1
+        )
+
+        return self.mlp(
+            edge_features
+        ).view(-1)
+
+
+
+class DotProductDecoder(nn.Module):
+    """
+    Decoder basato sul prodotto scalare tra le embedding
+    dei due nodi.
+    """
+
+    def forward(self, z, edge_index):
+        edge_index = edge_index.long()
+
+        src = edge_index[0]
+        dst = edge_index[1]
+
+        z_src = z[src]
+        z_dst = z[dst]
+
+        # Un logit per ogni coppia di nodi.
+        return torch.sum(z_src * z_dst, dim=1)
+
+
+
+================================================================================
+FILE: src/gnn/model.py
+================================================================================
+
+import torch
+import torch.nn.functional as F
+from torch_geometric.nn import SAGEConv
+
+
+class GraphSAGE(torch.nn.Module):
+
+    def __init__(
+        self,
+        in_channels,
+        hidden_channels,
+        out_channels
+    ):
+        super().__init__()
+
+        self.conv1 = SAGEConv(
+            in_channels,
+            hidden_channels
+        )
+
+        self.conv2 = SAGEConv(
+            hidden_channels,
+            out_channels
+        )
+
+    def forward(
+        self,
+        x,
+        edge_index
+    ):
+
+        x = self.conv1(
+            x,
+            edge_index
+        )
+
+        x = F.relu(x)
+
+        x = self.conv2(
+            x,
+            edge_index
+        )
+
+        return x
+
+
+================================================================================
+FILE: src/gnn/prediction.py
+================================================================================
+
+
+import torch
+
+from .data import prepare_edges
+
+
+def score_edges_from_embeddings(
+    z,
+    decoder,
+    edge_index,
+    batch_size=50000,
+    return_probabilities=False,
+):
+    """
+    Calcola gli score degli archi a batch.
+
+    Per impostazione predefinita restituisce i logit,
+    evitando la saturazione della sigmoid durante il ranking.
+
+    Se return_probabilities=True, restituisce le probabilità
+    ottenute applicando la sigmoid ai logit.
+    """
+
+    if batch_size <= 0:
+        raise ValueError("batch_size deve essere maggiore di 0.")
+
+    edge_index = edge_index.long()
+    decoder.eval()
+
+    scores = []
+
+    with torch.no_grad():
+        for start in range(0, edge_index.size(1), batch_size):
+            end = min(start + batch_size, edge_index.size(1))
+            batch_edges = edge_index[:, start:end]
+
+            logits = decoder(z, batch_edges).reshape(-1)
+
+            if return_probabilities:
+                logits = torch.sigmoid(logits)
+
+            scores.append(logits.cpu())
+
+    if not scores:
+        return torch.empty(0, dtype=z.dtype, device="cpu")
+
+    return torch.cat(scores)
+
+
+def predict_edges(
+    model,
+    decoder,
+    data,
+    edge_index,
+    return_probabilities=False,
+):
+    """
+    Calcola gli score degli archi usando il grafo di message passing
+    presente in data.edge_index.
+    """
+
+    model.eval()
+    decoder.eval()
+
+    with torch.no_grad():
+        z = model(data.x, data.edge_index)
+
+    return score_edges_from_embeddings(
+        z,
+        decoder,
+        edge_index,
+        return_probabilities=return_probabilities,
+    )
+
+
+def predict_query_candidates(
+    model,
+    decoder,
+    data,
+    query_positive_edges,
+    query_negative_edges,
+    node_to_idx,
+    batch_size=50000,
+    return_probabilities=False,
+):
+    """
+    Calcola gli score per Hits@K.
+
+    Gli embedding dei nodi vengono calcolati una sola volta.
+    I candidati negativi vengono concatenati e processati a batch.
+    """
+
+    model.eval()
+    decoder.eval()
+
+    with torch.no_grad():
+        z = model(data.x, data.edge_index)
+
+    positive_edge_index, _ = prepare_edges(
+        query_positive_edges,
+        [],
+        node_to_idx,
+    )
+
+    positive_edge_index = positive_edge_index.to(data.x.device)
+
+    positive_scores = score_edges_from_embeddings(
+        z,
+        decoder,
+        positive_edge_index,
+        batch_size=batch_size,
+        return_probabilities=return_probabilities,
+    )
+
+    num_queries = len(query_negative_edges)
+
+    if num_queries == 0:
+        return positive_scores.tolist(), []
+
+    negatives_per_query = len(query_negative_edges[0])
+
+    if negatives_per_query == 0:
+        raise ValueError("Ogni query deve avere almeno un negativo.")
+
+    for negative_edges in query_negative_edges:
+        if len(negative_edges) != negatives_per_query:
+            raise ValueError(
+                "Tutte le query devono avere lo stesso numero di negativi."
+            )
+
+    flat_negative_edges = [
+        edge
+        for query_edges in query_negative_edges
+        for edge in query_edges
+    ]
+
+    flat_negative_edge_index, _ = prepare_edges(
+        [],
+        flat_negative_edges,
+        node_to_idx,
+    )
+
+    flat_negative_edge_index = flat_negative_edge_index.to(data.x.device)
+
+    flat_negative_scores = score_edges_from_embeddings(
+        z,
+        decoder,
+        flat_negative_edge_index,
+        batch_size=batch_size,
+        return_probabilities=return_probabilities,
+    )
+
+    negative_scores = [
+        flat_negative_scores[
+            i * negatives_per_query:(i + 1) * negatives_per_query
+        ].tolist()
+        for i in range(num_queries)
+    ]
+
+    return positive_scores.tolist(), negative_scores
+
+
+
+================================================================================
+FILE: src/gnn/training.py
+================================================================================
+
+import torch
+import torch.nn.functional as F
+
+from src.evaluation import evaluate_scores
+
+from .data import (
+    prepare_edges,
+    sample_message_passing_edges
+)
+
+
+def compute_loss(
+    logits,
+    labels
+):
+
+    return F.binary_cross_entropy_with_logits(
+        logits,
+        labels
+    )
+
+
+def train_gnn(
+    model,
+    decoder,
+    data,
+    train_edges,
+    train_negative_edges,
+    val_edges,
+    val_negative_edges,
+    node_to_idx,
+    optimizer,
+    epochs,
+    keep_ratio=1.0,
+    seed=42,
+    patience=50
+):
+
+    train_edge_index, train_labels = prepare_edges(
+        train_edges,
+        train_negative_edges,
+        node_to_idx
+    )
+
+    val_edge_index, val_labels = prepare_edges(
+        val_edges,
+        val_negative_edges,
+        node_to_idx
+    )
+
+    train_edge_index = train_edge_index.to(
+        data.x.device
+    )
+
+    train_labels = train_labels.to(
+        data.x.device
+    )
+
+    val_edge_index = val_edge_index.to(
+        data.x.device
+    )
+
+    val_labels = val_labels.to(
+        data.x.device
+    )
+
+    history = {
+        "loss": [],
+        "val_auc": [],
+        "val_ap": [],
+        "best_epoch": None,
+        "best_val_auc": None,
+        "best_val_ap": None
+    }
+
+    best_val_auc = -float("inf")
+    best_val_ap = None
+    best_epoch = None
+
+    best_model_state = None
+    best_decoder_state = None
+
+    epochs_without_improvement = 0
+    epochs_trained = 0
+
+    for epoch in range(
+        1,
+        epochs + 1
+    ):
+
+        model.train()
+        decoder.train()
+
+        optimizer.zero_grad()
+
+        message_passing_edge_index = (
+            sample_message_passing_edges(
+                data.edge_index,
+                keep_ratio=keep_ratio,
+                seed=seed + epoch
+            )
+        )
+
+        message_passing_edge_index = (
+            message_passing_edge_index.to(
+                data.x.device
+            )
+        )
+
+        z = model(
+            data.x,
+            message_passing_edge_index
+        )
+
+        train_logits = decoder(
+            z,
+            train_edge_index
+        )
+
+        loss = compute_loss(
+            train_logits,
+            train_labels
+        )
+
+        loss.backward()
+
+        optimizer.step()
+
+        
+        # --------------------------------------------------
+        # VALIDATION
+        # --------------------------------------------------
+        model.eval()
+        decoder.eval()
+
+        with torch.no_grad():
+            # Ricalcoliamo gli embedding con i pesi aggiornati.
+            # Usiamo il grafo di training completo, coerentemente
+            # con predict_edges() nella versione attuale.
+            z_val = model(
+                data.x,
+                data.edge_index
+            )
+
+            val_scores = decoder(
+                z_val,
+                val_edge_index
+            )
+
+
+        pos_mask = val_labels == 1.0
+        neg_mask = val_labels == 0.0
+
+        val_metrics = evaluate_scores(
+            pos_scores=val_scores[pos_mask],
+            neg_scores=val_scores[neg_mask]
+        )
+
+        val_auc = val_metrics["auc"]
+        val_ap = val_metrics["ap"]
+
+        history["loss"].append(
+            loss.item()
+        )
+
+        history["val_auc"].append(
+            val_auc
+        )
+
+        history["val_ap"].append(
+            val_ap
+        )
+
+        if val_auc > best_val_auc:
+
+            best_val_auc = val_auc
+            best_val_ap = val_ap
+            best_epoch = epoch
+            epochs_without_improvement = 0
+
+            best_model_state = {
+                key: value.detach()
+                .cpu()
+                .clone()
+                for key, value
+                in model.state_dict().items()
+            }
+
+            best_decoder_state = {
+                key: value.detach()
+                .cpu()
+                .clone()
+                for key, value
+                in decoder.state_dict().items()
+            }
+
+        else:
+            epochs_without_improvement += 1
+
+        epochs_trained = epoch
+
+        if (
+            epoch == 1
+            or epoch % 10 == 0
+            or epoch == epochs
+        ):
+
+            print(
+                f"Epoch {epoch:03d} | "
+                f"Loss: {loss.item():.4f} | "
+                f"Val AUC: {val_auc:.4f} | "
+                f"Val AP: {val_ap:.4f}"
+            )
+
+        if epochs_without_improvement >= patience:
+            print(
+                f"Early stopping at epoch {epoch}: "
+                f"validation AUC did not improve for "
+                f"{patience} consecutive epochs."
+            )
+            break
+
+    if best_model_state is not None:
+
+        model.load_state_dict(
+            best_model_state
+        )
+
+    if best_decoder_state is not None:
+
+        decoder.load_state_dict(
+            best_decoder_state
+        )
+
+    history["best_epoch"] = best_epoch
+    history["best_val_auc"] = best_val_auc
+    history["best_val_ap"] = best_val_ap
+    history["epochs_trained"] = epochs_trained
+
+    print()
+    print(
+        f"Best epoch: {best_epoch}"
+    )
+
+    print(
+        f"Best validation AUC: "
+        f"{best_val_auc:.4f}"
+    )
+
+    print(
+        f"Validation AP at best epoch: "
+        f"{best_val_ap:.4f}"
+    )
+
+    return history
+
+
+================================================================================
+FILE: src/graph_utils.py
+================================================================================
+
+import networkx as nx
+import matplotlib.pyplot as plt
+from config import RESULTS_DIR, DATASET_NAME
+
+def graph_statistics(G:nx.Graph):
+    return{
+        "nodes": G.number_of_nodes(),
+        "edges": G.number_of_edges(),
+        "density": nx.density(G),
+        "connected_components": nx.number_connected_components(G)
+    }
+
+
+
+def degree_statistics(G: nx.Graph):
+    degrees = [degree for _, degree in G.degree()]
+
+    return{
+        "min_degree": min(degrees),
+        "max_degree": max(degrees),
+        "average_degree": sum(degrees) / len(degrees),
+        "median_degree": sorted(degrees)[len(degrees)//2]
+    }
+
+
+
+
+
+def plot_degree_distribution(
+    G: nx.Graph,
+    title,
+    show=False,
+    save=True,
+):
+    degrees = [degree for _, degree in G.degree()]
+
+    plt.figure(figsize=(8, 5))
+    plt.hist(degrees, bins=50)
+    plt.xlabel("Degree")
+    plt.ylabel("Number of nodes")
+    plt.title(title)
+
+    if save:
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        output_path = RESULTS_DIR / f"{DATASET_NAME}_degree_distribution.png"
+        plt.savefig(output_path, dpi=300, bbox_inches="tight")
+        print(f"Grafico salvato in: {output_path}")
+
+    if show:
+        plt.show()
+
+    plt.close()
+
+
+
+
+================================================================================
+FILE: src/negative_sampling.py
+================================================================================
+
+import random
+
+
+def generate_negative_edges(
+    G,
+    num_edges,
+    seed=42,
+    forbidden_edges=None
+):
+    """
+    Genera archi negativi casuali senza duplicati.
+
+    Gli archi generati:
+    - non devono appartenere a G;
+    - non devono appartenere a forbidden_edges;
+    - non devono essere duplicati.
+    """
+
+    if num_edges < 0:
+        raise ValueError("num_edges non può essere negativo.")
+
+    if num_edges == 0:
+        return []
+
+    nodes = list(G.nodes())
+
+    if len(nodes) < 2:
+        raise ValueError(
+            "Servono almeno due nodi per generare archi negativi."
+        )
+
+    if forbidden_edges is None:
+        forbidden_edges = set()
+    else:
+        forbidden_edges = {
+            tuple(sorted(edge))
+            for edge in forbidden_edges
+        }
+
+    # Numero massimo di coppie non orientate fra nodi distinti.
+    max_possible = len(nodes) * (len(nodes) - 1) // 2
+
+    # Le coppie reali e quelle vietate non sono disponibili.
+    unavailable = {
+        tuple(sorted((u, v)))
+        for u, v in G.edges()
+        if u != v
+    }
+    unavailable.update(
+        edge for edge in forbidden_edges if edge[0] != edge[1]
+    )
+
+    available = max_possible - len(unavailable)
+
+    if num_edges > available:
+        raise ValueError(
+            f"Richiesti {num_edges} archi negativi, "
+            f"ma le coppie disponibili sono solo {available}."
+        )
+
+    rng = random.Random(seed)
+    negative_edges = set()
+
+    while len(negative_edges) < num_edges:
+        u, v = rng.sample(nodes, 2)
+        edge = tuple(sorted((u, v)))
+
+        if edge in unavailable or edge in negative_edges:
+            continue
+
+        negative_edges.add(edge)
+
+    return list(negative_edges)
+
+
+def generate_query_negative_edges(
+    G,
+    positive_edges,
+    num_negatives_per_query=999,
+    seed=42
+):
+    """
+    Genera candidati negativi distinti per ogni query positiva.
+    Le coppie generate non devono essere archi del grafo.
+    """
+
+    if num_negatives_per_query < 0:
+        raise ValueError(
+            "num_negatives_per_query non può essere negativo."
+        )
+
+    rng = random.Random(seed)
+    nodes = list(G.nodes())
+    query_negative_edges = []
+
+    for u, v in positive_edges:
+        if u not in G:
+            raise ValueError(f"Il nodo {u} non appartiene al grafo.")
+
+        # Destinazioni ammissibili: nodi diversi da u
+        # che non sono già suoi vicini.
+        available = (
+            len(nodes)
+            - 1
+            - len(set(G.neighbors(u)) - {u})
+        )
+
+        if num_negatives_per_query > available:
+            raise ValueError(
+                f"Query ({u}, {v}): richiesti "
+                f"{num_negatives_per_query} negativi, "
+                f"ma per il nodo {u} ne sono disponibili "
+                f"solo {available}."
+            )
+
+        negative_edges = set()
+
+        while len(negative_edges) < num_negatives_per_query:
+            target = rng.choice(nodes)
+
+            if target == u:
+                continue
+
+            if G.has_edge(u, target):
+                continue
+
+            edge = tuple(sorted((u, target)))
+            negative_edges.add(edge)
+
+        query_negative_edges.append(list(negative_edges))
+
+    return query_negative_edges
+
+
+
+================================================================================
+FILE: src/pipeline_data.py
+================================================================================
+
+
+"""Preparazione degli split, dei negativi e delle query di valutazione."""
+
+from config import (
+    SEED,
+    TEST_RATIO,
+    VAL_RATIO,
+    SUPERVISION_RATIO,
+    NUM_QUERY_POSITIVES,
+    NEGATIVES_PER_QUERY,
+)
+
+from src.split import split_edges, split_train_edges_for_gnn
+from src.negative_sampling import (
+    generate_negative_edges,
+    generate_query_negative_edges,
+)
+
+
+def prepare_graph_splits(graph):
+    """Crea gli split esterni e quelli interni per la GNN."""
+    train_graph, val_edges, test_edges = split_edges(
+        graph,
+        test_ratio=TEST_RATIO,
+        val_ratio=VAL_RATIO,
+        seed=SEED,
+    )
+
+    train_edges = list(train_graph.edges())
+
+    (
+        message_passing_graph,
+        message_passing_edges,
+        supervised_train_edges,
+    ) = split_train_edges_for_gnn(
+        train_graph,
+        supervision_ratio=SUPERVISION_RATIO,
+        seed=SEED,
+    )
+
+    print("\n" + "=" * 70)
+    print("EDGE SPLIT")
+    print("=" * 70)
+    print(f"Original edges:            {graph.number_of_edges()}")
+    print(f"Train edges:               {len(train_edges)}")
+    print(f"Validation edges:          {len(val_edges)}")
+    print(f"Test edges:                {len(test_edges)}")
+    print(f"Message-passing edges:     {len(message_passing_edges)}")
+    print(f"Supervised positive edges: {len(supervised_train_edges)}")
+
+    return {
+        "train_graph": train_graph,
+        "train_edges": train_edges,
+        "val_edges": val_edges,
+        "test_edges": test_edges,
+        "message_passing_graph": message_passing_graph,
+        "message_passing_edges": message_passing_edges,
+        "supervised_train_edges": supervised_train_edges,
+    }
+
+
+def prepare_negative_edges(graph, splits):
+    """Genera negativi disgiunti, escludendo tutti gli archi reali."""
+    print("\n" + "=" * 70)
+    print("NEGATIVE SAMPLING")
+    print("=" * 70)
+
+    train_edges = splits["train_edges"]
+    val_edges = splits["val_edges"]
+    test_edges = splits["test_edges"]
+    supervised_train_edges = splits["supervised_train_edges"]
+
+    original_edges = {
+        tuple(sorted(edge))
+        for edge in graph.edges()
+    }
+
+    train_negative_edges = generate_negative_edges(
+        graph,
+        num_edges=len(train_edges),
+        seed=SEED,
+        forbidden_edges=original_edges,
+    )
+
+    train_forbidden = original_edges | {
+        tuple(sorted(edge))
+        for edge in train_negative_edges
+    }
+
+    val_negative_edges = generate_negative_edges(
+        graph,
+        num_edges=len(val_edges),
+        seed=SEED + 1,
+        forbidden_edges=train_forbidden,
+    )
+
+    val_forbidden = train_forbidden | {
+        tuple(sorted(edge))
+        for edge in val_negative_edges
+    }
+
+    test_negative_edges = generate_negative_edges(
+        graph,
+        num_edges=len(test_edges),
+        seed=SEED + 2,
+        forbidden_edges=val_forbidden,
+    )
+
+    test_forbidden = val_forbidden | {
+        tuple(sorted(edge))
+        for edge in test_negative_edges
+    }
+
+    supervised_train_negative_edges = generate_negative_edges(
+        graph,
+        num_edges=len(supervised_train_edges),
+        seed=SEED + 100,
+        forbidden_edges=test_forbidden,
+    )
+
+    print(f"Train negatives:           {len(train_negative_edges)}")
+    print(f"Validation negatives:      {len(val_negative_edges)}")
+    print(f"Test negatives:            {len(test_negative_edges)}")
+    print(f"GNN supervised negatives:  {len(supervised_train_negative_edges)}")
+
+    return {
+        "train_negative_edges": train_negative_edges,
+        "val_negative_edges": val_negative_edges,
+        "test_negative_edges": test_negative_edges,
+        "supervised_train_negative_edges": supervised_train_negative_edges,
+    }
+
+
+def prepare_hits_queries(graph, test_edges):
+    """Crea le query positive e i relativi candidati negativi."""
+    print("\n" + "=" * 70)
+    print("HITS@K QUERY GENERATION")
+    print("=" * 70)
+
+    if len(test_edges) < NUM_QUERY_POSITIVES:
+        raise ValueError(
+            "Il test set contiene meno archi delle query richieste."
+        )
+
+    query_positive_edges = list(test_edges[:NUM_QUERY_POSITIVES])
+
+    query_negative_edges = generate_query_negative_edges(
+        graph,
+        query_positive_edges,
+        num_negatives_per_query=NEGATIVES_PER_QUERY,
+        seed=SEED,
+    )
+
+    print(f"Queries: {len(query_positive_edges)}")
+    print(f"Negative candidates/query: {NEGATIVES_PER_QUERY}")
+    print(f"Candidates/query: {1 + NEGATIVES_PER_QUERY}")
+    print(
+        "Total negative candidates: "
+        f"{sum(len(edges) for edges in query_negative_edges)}"
+    )
+
+    return query_positive_edges, query_negative_edges
+
+
+
+
+================================================================================
+FILE: src/reporting.py
+================================================================================
+
+def print_section(title):
+    """Stampa un titolo di sezione."""
+    print()
+    print("=" * 70)
+    print(title)
+    print("=" * 70)
+
+
+def print_graph_summary(graph, graph_statistics, degree_statistics):
+    """Stampa le statistiche generali e di grado del grafo."""
+    graph_stats = graph_statistics(graph)
+    degree_stats = degree_statistics(graph)
+
+    print(f"Nodes:       {graph_stats['nodes']}")
+    print(f"Edges:       {graph_stats['edges']}")
+    print(f"Density:     {graph_stats['density']}")
+    print(f"Components:  {graph_stats['connected_components']}")
+    print(f"Min degree:  {degree_stats['min_degree']}")
+    print(f"Max degree:  {degree_stats['max_degree']}")
+    print(f"Avg degree:  {degree_stats['average_degree']}")
+    print(f"Median:      {degree_stats['median_degree']}")
+
+
+def print_baseline_results(title, results, hits_results):
+    """Stampa AUC, AP e Hits@K delle baseline."""
+    print_section(title)
+
+    print(
+        f"{'Method':<25}"
+        f"{'AUC':>12}"
+        f"{'AP':>12}"
+        f"{'Hits@10':>12}"
+        f"{'Hits@50':>12}"
+        f"{'Hits@100':>12}"
+    )
+    print("-" * 85)
+
+    for name, result in results.items():
+        hits = hits_results[name]
+
+        print(
+            f"{name:<25}"
+            f"{result['auc']:>12.4f}"
+            f"{result['ap']:>12.4f}"
+            f"{hits[10]:>12.4f}"
+            f"{hits[50]:>12.4f}"
+            f"{hits[100]:>12.4f}"
+        )
+
+
+
+================================================================================
+FILE: src/reproducibility.py
+================================================================================
+
+
+"""Utilities per la riproducibilità degli esperimenti."""
+
+import random
+
+import numpy as np
+import torch
+
+
+def set_global_seed(seed: int) -> None:
+    """Imposta i seed dei generatori casuali utilizzati dal progetto."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+
+
+================================================================================
+FILE: src/split.py
+================================================================================
+
+import networkx as nx
+import random
+
+
+def split_edges(G: nx.Graph, test_ratio = 0.1, val_ratio = 0.1, seed =42):
+    edges = list(G.edges())
+
+
+    rng = random.Random(seed)
+    rng.shuffle(edges)
+
+
+    n_edges = len(edges)
+
+    n_test = int(n_edges * test_ratio)
+    n_val = int(n_edges * val_ratio)
+
+    test_edges = edges[:n_test]
+    val_edges = edges[n_test: n_test + n_val]
+    train_edges = edges[n_test + n_val:]
+
+    train_graph = nx.Graph()
+    train_graph.add_nodes_from(G.nodes())
+    train_graph.add_edges_from(train_edges)
+
+    return train_graph, val_edges, test_edges
+
+
+def split_train_edges_for_gnn(
+    train_graph: nx.Graph,
+    supervision_ratio=0.1,
+    seed=42
+):
+    """
+    Separa gli archi del training in:
+    - message_passing_edges: usati per costruire il grafo osservabile;
+    - supervised_train_edges: usati come positivi nella loss del decoder.
+
+    Il grafo restituito mantiene tutti i nodi originali.
+    """
+
+    if not 0 < supervision_ratio < 1:
+        raise ValueError(
+            "supervision_ratio deve essere compreso tra 0 e 1."
+        )
+
+    edges = list(train_graph.edges())
+
+    if len(edges) < 2:
+        raise ValueError(
+            "Servono almeno due archi per effettuare la separazione."
+        )
+
+    rng = random.Random(seed)
+    rng.shuffle(edges)
+
+    n_supervised = max(
+        1,
+        int(len(edges) * supervision_ratio)
+    )
+
+    supervised_train_edges = edges[:n_supervised]
+    message_passing_edges = edges[n_supervised:]
+
+    # Manteniamo tutti i nodi, anche quelli senza archi.
+    message_passing_graph = nx.Graph()
+    message_passing_graph.add_nodes_from(train_graph.nodes())
+    message_passing_graph.add_edges_from(message_passing_edges)
+
+    return (
+        message_passing_graph,
+        message_passing_edges,
+        supervised_train_edges
+    )
+
+
+
+================================================================================
+FILE: src/utils/__init__.py
+================================================================================
+
+
+
+
+================================================================================
+FILE: src/utils/pipeline_checks.py
+================================================================================
+
+
+"""Controlli di integrità della pipeline sperimentale."""
+
+from src.utils.sanity_checks import (
+    verify_gnn_split,
+    verify_positive_split,
+    verify_negative_edges,
+    analyze_isolated_nodes,
+)
+
+
+def run_sanity_checks(graph, splits, negatives, print_section):
+    """Verifica split, negative sampling e nodi isolati."""
+
+    print_section("SANITY CHECKS")
+
+    train_graph = splits["train_graph"]
+    message_passing_graph = splits["message_passing_graph"]
+    message_passing_edges = splits["message_passing_edges"]
+    supervised_train_edges = splits["supervised_train_edges"]
+    val_edges = splits["val_edges"]
+    test_edges = splits["test_edges"]
+
+    gnn_split_valid = verify_gnn_split(
+        train_graph=train_graph,
+        message_passing_graph=message_passing_graph,
+        message_passing_edges=message_passing_edges,
+        supervised_train_edges=supervised_train_edges,
+        supervised_train_negative_edges=negatives[
+            "supervised_train_negative_edges"
+        ],
+        val_negative_edges=negatives["val_negative_edges"],
+        test_negative_edges=negatives["test_negative_edges"],
+        val_edges=val_edges,
+        test_edges=test_edges,
+    )
+
+    if not gnn_split_valid:
+        raise RuntimeError("Controlli dello split GNN falliti.")
+
+    positive_valid = verify_positive_split(
+        graph,
+        train_graph,
+        val_edges,
+        test_edges,
+    )
+
+    negative_valid = verify_negative_edges(
+        graph,
+        train_graph,
+        negatives["train_negative_edges"],
+        negatives["val_negative_edges"],
+        negatives["test_negative_edges"],
+        val_edges,
+        test_edges,
+    )
+
+    analyze_isolated_nodes(train_graph, val_edges, test_edges)
+    analyze_isolated_nodes(message_passing_graph, val_edges, test_edges, graph_name="message_passing")
+
+    if not positive_valid:
+        raise RuntimeError("Positive split non valido.")
+
+    if not negative_valid:
+        raise RuntimeError("Negative sampling non valido.")
+
+
+
+
+================================================================================
+FILE: src/utils/sanity_checks.py
+================================================================================
+
+import torch
+import networkx as nx
+
+# ============================================================
+# EDGE UTILITIES
+# ============================================================
+
+def canonical_edge(u, v):
+    """
+    Restituisce un arco non orientato in forma canonica.
+    """
+
+    return tuple(sorted((u, v)))
+
+
+def canonical_edges(edges):
+    """
+    Converte una lista di archi nella rappresentazione canonica.
+    """
+
+    return {
+        canonical_edge(u, v)
+        for u, v in edges
+    }
+
+
+# ============================================================
+# POSITIVE EDGE SANITY CHECK
+# ============================================================
+
+def verify_positive_split(
+    G,
+    train_graph,
+    val_edges,
+    test_edges
+):
+    """
+    Verifica che gli archi positivi siano:
+
+    - presenti nel grafo originale;
+    - mutuamente disgiunti;
+    - correttamente distribuiti tra train, validation e test.
+    """
+
+    print()
+    print("=" * 60)
+    print("POSITIVE EDGE SANITY CHECK")
+    print("=" * 60)
+
+    original_edges = canonical_edges(
+        G.edges()
+    )
+
+    train_edges = canonical_edges(
+        train_graph.edges()
+    )
+
+    val_edges_set = canonical_edges(
+        val_edges
+    )
+
+    test_edges_set = canonical_edges(
+        test_edges
+    )
+
+    print(
+        f"Original edges : {len(original_edges)}"
+    )
+
+    print(
+        f"Train edges    : {len(train_edges)}"
+    )
+
+    print(
+        f"Validation     : {len(val_edges_set)}"
+    )
+
+    print(
+        f"Test           : {len(test_edges_set)}"
+    )
+
+    # --------------------------------------------------------
+    # Membership
+    # --------------------------------------------------------
+
+    train_valid = train_edges <= original_edges
+    val_valid = val_edges_set <= original_edges
+    test_valid = test_edges_set <= original_edges
+
+    print()
+    print("Membership:")
+
+    print(
+        f"Train ⊆ Original: {train_valid}"
+    )
+
+    print(
+        f"Validation ⊆ Original: {val_valid}"
+    )
+
+    print(
+        f"Test ⊆ Original: {test_valid}"
+    )
+
+    # --------------------------------------------------------
+    # Disjointness
+    # --------------------------------------------------------
+
+    train_val = train_edges & val_edges_set
+    train_test = train_edges & test_edges_set
+    val_test = val_edges_set & test_edges_set
+
+    print()
+    print("Disjointness:")
+
+    print(
+        f"Train ∩ Validation : {len(train_val)}"
+    )
+
+    print(
+        f"Train ∩ Test       : {len(train_test)}"
+    )
+
+    print(
+        f"Validation ∩ Test  : {len(val_test)}"
+    )
+
+    valid = (
+        train_valid
+        and val_valid
+        and test_valid
+        and len(train_val) == 0
+        and len(train_test) == 0
+        and len(val_test) == 0
+    )
+
+    print()
+
+    if valid:
+        print("✓ Positive split valido")
+    else:
+        print("✗ Positive split NON valido")
+
+    return valid
+
+
+# ============================================================
+# NEGATIVE EDGE SANITY CHECK
+# ============================================================
+def verify_negative_edges(
+    G,
+    train_graph,
+    train_negative_edges,
+    val_negative_edges,
+    test_negative_edges,
+    val_edges,
+    test_edges
+):
+    """
+    Verifica che gli archi negativi:
+    - non appartengano al grafo originale;
+    - siano disgiunti tra loro;
+    - non coincidano con gli archi positivi.
+    """
+    print()
+    print("=" * 60)
+    print("NEGATIVE EDGE SANITY CHECK")
+    print("=" * 60)
+
+    original_edges = canonical_edges(G.edges())
+    train_positive = canonical_edges(train_graph.edges())
+    val_positive = canonical_edges(val_edges)
+    test_positive = canonical_edges(test_edges)
+
+    train_negative = canonical_edges(train_negative_edges)
+    val_negative = canonical_edges(val_negative_edges)
+    test_negative = canonical_edges(test_negative_edges)
+
+    print(f"Train negatives : {len(train_negative)}")
+    print(f"Validation negatives : {len(val_negative)}")
+    print(f"Test negatives : {len(test_negative)}")
+
+    # --------------------------------------------------------
+    # Disjointness checks
+    # --------------------------------------------------------
+    print("\nRisultati controlli di disgiunzione:")
+    
+    checks = {
+        "Train negatives ∩ Original == ∅": train_negative.isdisjoint(original_edges),
+        "Validation negatives ∩ Original == ∅": val_negative.isdisjoint(original_edges),
+        "Test negatives ∩ Original == ∅": test_negative.isdisjoint(original_edges),
+        
+        "Train ∩ Validation negatives == ∅": train_negative.isdisjoint(val_negative),
+        "Train ∩ Test negatives == ∅": train_negative.isdisjoint(test_negative),
+        "Validation ∩ Test negatives == ∅": val_negative.isdisjoint(test_negative),
+
+        "Train neg ∩ Train pos == ∅": train_negative.isdisjoint(train_positive),
+        "Train neg ∩ Val pos == ∅": train_negative.isdisjoint(val_positive),
+        "Train neg ∩ Test pos == ∅": train_negative.isdisjoint(test_positive),
+        "Val neg ∩ Val pos == ∅": val_negative.isdisjoint(val_positive),
+        "Test neg ∩ Test pos == ∅": test_negative.isdisjoint(test_positive),
+    }
+
+    for description, passed in checks.items():
+        print(f"{'✓' if passed else '✗'} {description}")
+
+    valid = all(checks.values())
+
+    print()
+    if valid:
+        print("✓ Negative sampling valido")
+    else:
+        print("✗ Negative sampling NON valido")
+
+    return valid
+
+# ============================================================
+# ISOLATED NODE ANALYSIS
+# ============================================================
+
+def analyze_isolated_nodes(
+    train_graph,
+    val_edges,
+    test_edges,
+    graph_name="train"
+):
+    """
+    Analizza quanti nodi diventano isolati nel training graph
+    a causa dell'edge split e quanti archi di validation/test
+    coinvolgono tali nodi.
+    """
+
+    print()
+    print("=" * 60)
+    print("ISOLATED NODE ANALYSIS")
+    print("=" * 60)
+
+    isolated_nodes = {
+        node
+        for node, degree
+        in train_graph.degree()
+        if degree == 0
+    }
+
+    print(
+        f"Isolated nodes in {graph_name} : "
+        f"{len(isolated_nodes)}"
+    )
+
+    val_isolated = sum(
+        1
+        for u, v in val_edges
+        if (
+            u in isolated_nodes
+            or v in isolated_nodes
+        )
+    )
+
+    test_isolated = sum(
+        1
+        for u, v in test_edges
+        if (
+            u in isolated_nodes
+            or v in isolated_nodes
+        )
+    )
+
+    print(
+        f"Validation edges with isolated endpoint : "
+        f"{val_isolated} / {len(val_edges)} "
+        f"({val_isolated / len(val_edges) * 100:.4f}%)"
+    )
+
+    print(
+        f"Test edges with isolated endpoint : "
+        f"{test_isolated} / {len(test_edges)} "
+        f"({test_isolated / len(test_edges) * 100:.4f}%)"
+    )
+
+    return {
+        "isolated_nodes": len(isolated_nodes),
+        "validation_isolated_edges": val_isolated,
+        "test_isolated_edges": test_isolated
+    }
+
+
+# ============================================================
+# FEATURE COMPUTATION
+# ============================================================
+
+def compute_expected_features(G):
+    """
+    Calcola manualmente le feature utilizzate dal modello:
+
+    1. grado normalizzato;
+    2. clustering coefficient.
+    """
+
+    nodes = list(G.nodes())
+
+    degrees = [
+        G.degree(node)
+        for node in nodes
+    ]
+
+    max_degree = max(degrees)
+
+    clustering = {
+        node: value
+        for node, value
+        in nx.clustering(G).items()
+    }
+
+    features = torch.tensor(
+        [
+            [
+                degree / max_degree,
+                clustering[node]
+            ]
+            for node, degree
+            in zip(nodes, degrees)
+        ],
+        dtype=torch.float
+    )
+
+    return features
+
+
+# ============================================================
+# FEATURE SOURCE CHECK
+# ============================================================
+
+def verify_feature_source(
+    G,
+    train_graph,
+    data
+):
+    """
+    Verifica che le feature utilizzate dalla GNN siano
+    calcolate dal training graph e non dal grafo completo.
+
+    Questo serve a escludere leakage informativo.
+    """
+
+    print()
+    print("=" * 60)
+    print("FEATURE SOURCE CHECK")
+    print("=" * 60)
+
+    original_features = compute_expected_features(
+        G
+    )
+
+    train_features = compute_expected_features(
+        train_graph
+    )
+
+    actual_features = (
+        data.x.cpu()
+    )
+
+    max_difference_original = torch.max(
+        torch.abs(
+            actual_features
+            -
+            original_features
+        )
+    ).item()
+
+    max_difference_train = torch.max(
+        torch.abs(
+            actual_features
+            -
+            train_features
+        )
+    ).item()
+
+    matches_original = torch.allclose(
+        actual_features,
+        original_features
+    )
+
+    matches_train = torch.allclose(
+        actual_features,
+        train_features
+    )
+
+    print(
+        f"Matches original graph: "
+        f"{matches_original}"
+    )
+
+    print(
+        f"Matches train graph: "
+        f"{matches_train}"
+    )
+
+    print(
+        f"Max difference vs original: "
+        f"{max_difference_original:.8f}"
+    )
+
+    print(
+        f"Max difference vs train: "
+        f"{max_difference_train:.8f}"
+    )
+
+    print()
+
+    if matches_train:
+        print(
+            "✓ Le feature corrispondono "
+            "al training graph."
+        )
+    else:
+        print(
+            "✗ Le feature NON corrispondono "
+            "al training graph."
+        )
+
+    return matches_train
+
+
+def verify_gnn_split(
+    train_graph,
+    message_passing_graph,
+    message_passing_edges,
+    supervised_train_edges,
+    supervised_train_negative_edges,
+    val_negative_edges,
+    test_negative_edges,
+    val_edges,
+    test_edges,
+):
+    """
+    Verifica la correttezza dello split utilizzato dalla GNN.
+
+    Controlla che:
+    - message passing e supervisione siano disgiunti;
+    - la loro unione ricostruisca il training graph;
+    - validation e test non siano nel grafo di message passing;
+    - i negativi di supervisione non appartengano al grafo originale
+      del training e siano disgiunti dai negativi di validation e test.
+    """
+    print()
+    print("=" * 60)
+    print("GNN SPLIT SANITY CHECK")
+    print("=" * 60)
+
+    train_set = canonical_edges(train_graph.edges())
+    mp_set = canonical_edges(message_passing_edges)
+    supervised_set = canonical_edges(supervised_train_edges)
+    graph_mp_set = canonical_edges(message_passing_graph.edges())
+    val_set = canonical_edges(val_edges)
+    test_set = canonical_edges(test_edges)
+    
+    supervised_neg_set = canonical_edges(supervised_train_negative_edges)
+    val_neg_set = canonical_edges(val_negative_edges)
+    test_neg_set = canonical_edges(test_negative_edges)
+
+    # Eseguiamo i controlli in modo ottimizzato senza allocare nuovi set
+    checks = {
+        "Message-passing graph coerente": graph_mp_set == mp_set,
+        "Message passing e supervisione disgiunti": mp_set.isdisjoint(supervised_set),
+        "Unione uguale al training graph": (mp_set | supervised_set) == train_set,
+        "Nessun arco di validation nel message passing": mp_set.isdisjoint(val_set),
+        "Nessun arco di test nel message passing": mp_set.isdisjoint(test_set),
+        "Negativi supervisionati assenti dai positivi train": supervised_neg_set.isdisjoint(train_set),
+        "Negativi supervisionati disgiunti dai negativi validation": supervised_neg_set.isdisjoint(val_neg_set),
+        "Negativi supervisionati disgiunti dai negativi test": supervised_neg_set.isdisjoint(test_neg_set),
+    }
+
+    for description, passed in checks.items():
+        print(f"{'✓' if passed else '✗'} {description}")
+
+    valid = all(checks.values())
+
+    print()
+    print(
+        "✓ GNN split valido"
+        if valid
+        else "✗ GNN split NON valido"
+    )
+
+    return valid

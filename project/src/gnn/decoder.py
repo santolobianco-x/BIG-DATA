@@ -57,3 +57,23 @@ class MLPDecoder(nn.Module):
         return self.mlp(
             edge_features
         ).view(-1)
+
+
+
+class DotProductDecoder(nn.Module):
+    """
+    Decoder basato sul prodotto scalare tra le embedding
+    dei due nodi.
+    """
+
+    def forward(self, z, edge_index):
+        edge_index = edge_index.long()
+
+        src = edge_index[0]
+        dst = edge_index[1]
+
+        z_src = z[src]
+        z_dst = z[dst]
+
+        # Un logit per ogni coppia di nodi.
+        return torch.sum(z_src * z_dst, dim=1)

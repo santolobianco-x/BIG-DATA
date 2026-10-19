@@ -1,7 +1,6 @@
 import networkx as nx
 import matplotlib.pyplot as plt
-
-
+from config import RESULTS_DIR, DATASET_NAME
 
 def graph_statistics(G:nx.Graph):
     return{
@@ -25,13 +24,31 @@ def degree_statistics(G: nx.Graph):
 
 
 
-def plot_degree_distribution(G: nx.Graph, title):
+
+
+def plot_degree_distribution(
+    G: nx.Graph,
+    title,
+    show=False,
+    save=True,
+):
     degrees = [degree for _, degree in G.degree()]
 
-    plt.figure(figsize=(8,5))
+    plt.figure(figsize=(8, 5))
     plt.hist(degrees, bins=50)
     plt.xlabel("Degree")
     plt.ylabel("Number of nodes")
     plt.title(title)
-    plt.show()
+
+    if save:
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        output_path = RESULTS_DIR / f"{DATASET_NAME}_degree_distribution.png"
+        plt.savefig(output_path, dpi=300, bbox_inches="tight")
+        print(f"Grafico salvato in: {output_path}")
+
+    if show:
+        plt.show()
+
+    plt.close()
 

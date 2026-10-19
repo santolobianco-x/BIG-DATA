@@ -6,7 +6,8 @@ from .data import (
 
 from .model import GraphSAGE
 
-from .decoder import MLPDecoder
+
+from .decoder import MLPDecoder, DotProductDecoder
 
 from .training import (
     compute_loss,

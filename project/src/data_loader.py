@@ -11,4 +11,7 @@ def load_graph(path):
         comments='#'
     )
 
+    
+    G.remove_edges_from(nx.selfloop_edges(G))
+
     return G

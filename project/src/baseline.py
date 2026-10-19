@@ -1,15 +1,8 @@
 import networkx as nx
-import math
+from math import log
 
 def common_neighbors_scores(G: nx.Graph, edges):
-    scores = []
-
-
-    for u, v in edges:
-        score = len(list(nx.common_neighbors(G, u, v)))
-        scores.append(score)
-
-    return scores
+    return [len(set(G[u]) & set(G[v])) for u, v in edges]
 
 
 def jaccard_scores(G: nx.Graph, edges):
@@ -18,21 +11,17 @@ def jaccard_scores(G: nx.Graph, edges):
     ]
 
 
-
 def adamic_adar_scores(G: nx.Graph, edges):
-
     scores = []
 
     for u, v in edges:
+        common = set(G.neighbors(u)) & set(G.neighbors(v))
 
-        score = 0.0
-
-        for w in nx.common_neighbors(G, u, v):
-
-            degree = G.degree(w)
-
-            if degree > 1:
-                score += 1 / math.log(degree)
+        score = sum(
+            1 / log(G.degree(w))
+            for w in common
+            if G.degree(w) > 1
+        )
 
         scores.append(score)
 

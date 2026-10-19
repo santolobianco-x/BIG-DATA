@@ -1,10 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-from sklearn.metrics import (
-    roc_auc_score,
-    average_precision_score
-)
+from src.evaluation import evaluate_scores
 
 from .data import (
     prepare_edges,
@@ -35,7 +32,8 @@ def train_gnn(
     optimizer,
     epochs,
     keep_ratio=1.0,
-    seed=42
+    seed=42,
+    patience=50
 ):
 
     train_edge_index, train_labels = prepare_edges(
@@ -82,6 +80,9 @@ def train_gnn(
     best_model_state = None
     best_decoder_state = None
 
+    epochs_without_improvement = 0
+    epochs_trained = 0
+
     for epoch in range(
         1,
         epochs + 1
@@ -125,43 +126,38 @@ def train_gnn(
 
         optimizer.step()
 
+        
+        # --------------------------------------------------
+        # VALIDATION
+        # --------------------------------------------------
         model.eval()
         decoder.eval()
 
         with torch.no_grad():
+            # Ricalcoliamo gli embedding con i pesi aggiornati.
+            # Usiamo il grafo di training completo, coerentemente
+            # con predict_edges() nella versione attuale.
+            z_val = model(
+                data.x,
+                data.edge_index
+            )
 
-            val_logits = decoder(
-                z,
+            val_scores = decoder(
+                z_val,
                 val_edge_index
             )
 
-            val_probabilities = torch.sigmoid(
-                val_logits
-            )
 
-        val_labels_cpu = (
-            val_labels
-            .detach()
-            .cpu()
-            .numpy()
+        pos_mask = val_labels == 1.0
+        neg_mask = val_labels == 0.0
+
+        val_metrics = evaluate_scores(
+            pos_scores=val_scores[pos_mask],
+            neg_scores=val_scores[neg_mask]
         )
 
-        val_probabilities_cpu = (
-            val_probabilities
-            .detach()
-            .cpu()
-            .numpy()
-        )
-
-        val_auc = roc_auc_score(
-            val_labels_cpu,
-            val_probabilities_cpu
-        )
-
-        val_ap = average_precision_score(
-            val_labels_cpu,
-            val_probabilities_cpu
-        )
+        val_auc = val_metrics["auc"]
+        val_ap = val_metrics["ap"]
 
         history["loss"].append(
             loss.item()
@@ -180,6 +176,7 @@ def train_gnn(
             best_val_auc = val_auc
             best_val_ap = val_ap
             best_epoch = epoch
+            epochs_without_improvement = 0
 
             best_model_state = {
                 key: value.detach()
@@ -197,6 +194,11 @@ def train_gnn(
                 in decoder.state_dict().items()
             }
 
+        else:
+            epochs_without_improvement += 1
+
+        epochs_trained = epoch
+
         if (
             epoch == 1
             or epoch % 10 == 0
@@ -209,6 +211,14 @@ def train_gnn(
                 f"Val AUC: {val_auc:.4f} | "
                 f"Val AP: {val_ap:.4f}"
             )
+
+        if epochs_without_improvement >= patience:
+            print(
+                f"Early stopping at epoch {epoch}: "
+                f"validation AUC did not improve for "
+                f"{patience} consecutive epochs."
+            )
+            break
 
     if best_model_state is not None:
 
@@ -225,6 +235,7 @@ def train_gnn(
     history["best_epoch"] = best_epoch
     history["best_val_auc"] = best_val_auc
     history["best_val_ap"] = best_val_ap
+    history["epochs_trained"] = epochs_trained
 
     print()
     print(

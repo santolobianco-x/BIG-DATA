@@ -221,21 +221,24 @@ def networkx_to_pyg(G, feature_mode="full"):
     # NODE FEATURES
     # --------------------------------------------------
 
-    degree = dict(G.degree())
-    clustering = nx.clustering(G)
+    if feature_mode in {"full", "degree"}:
 
-    max_degree = max(degree.values())
+        degree = dict(G.degree())
+        max_degree = max(degree.values(), default=0)
 
-    if max_degree > 0:
-        normalized_degree = {
-            node: degree[node] / max_degree
-            for node in nodes
-        }
-    else:
-        normalized_degree = {
-            node: 0.0
-            for node in nodes
-        }
+        if max_degree > 0:
+            normalized_degree = {
+                node: degree[node] / max_degree
+                for node in nodes
+            }
+        else:
+            normalized_degree = {
+                node: 0.0
+                for node in nodes
+            }
+
+    if feature_mode in {"full", "clustering"}:
+        clustering = nx.clustering(G)
 
     if feature_mode == "full":
 
