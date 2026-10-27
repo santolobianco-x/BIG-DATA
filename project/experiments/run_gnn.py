@@ -1,6 +1,11 @@
+"""
+MODULO PER L'ORCHESTRAZIONE DEGLI ESPERIMENTI CON GNN
+
+--> gestisce la preparazione dei dati in formato PYG, il controllo rigoroso
+    dell'anti-leakage, studio di ablazione e confronto tra diversi decoder.
+"""
 import numpy as np
 import torch
-
 
 from src.gnn import (
     networkx_to_pyg,
@@ -46,7 +51,13 @@ EVALUATION_METRICS = [
 
 
 def prepare_gnn_data(message_passing_graph, print_section):
-    """Prepara i dati PyTorch Geometric per gli esperimenti GNN."""
+    """
+    Traduce il grafo in tensori per la GNN. Il grafo in input deve
+    essere il message_passing_graph, privato degli archi di supervisione
+    e di test, per costringere l'Encoder a imparare le rappresentazioni 
+    osservando solo le connessioni ammesse.
+    """
+
     print_section("GNN DATA")
 
     data, _ = networkx_to_pyg(
@@ -85,14 +96,11 @@ def run_gnn_multiseed(
     device="cpu"
 ):
     """
-    Esegue GraphSAGE + MLP su più seed.
-
-    L'encoder osserva esclusivamente message_passing_graph.
-    Il decoder viene addestrato sugli archi supervisionati,
-    che non sono presenti nel grafo osservato.
-
-    La validation seleziona il checkpoint migliore.
-    Il test viene utilizzato per la valutazione finale.
+    Esegue l'addestramento e la valutazione della GNN 
+    ripetutamente su seed diversi.
+    Si aggregano run diverse, con inizializzazione casuale dei pesi,
+    per restituire media e deviazione standard e garantire robustezza
+    statistica.
     """
 
     if decoder_type not in ("mlp", "dot_product"):
@@ -102,21 +110,11 @@ def run_gnn_multiseed(
 
     results = []
 
-    # --------------------------------------------------------
-    # DATA
-    # --------------------------------------------------------
-
-    data, node_to_idx = networkx_to_pyg(
-        message_passing_graph,
-        feature_mode="full"
-    )
-
+    # preparazione del grafo base
+    data, node_to_idx = networkx_to_pyg(message_passing_graph,feature_mode="full")
     data = data.to(device)
-
-    # --------------------------------------------------------
-    # MULTI-SEED
-    # --------------------------------------------------------
-
+    
+    # itera per i seed che sono stati indicati
     for seed in seeds:
 
         print()
@@ -124,23 +122,20 @@ def run_gnn_multiseed(
         print(f"GRAPHSAGE + {decoder_type.upper()} - SEED {seed}")
         print("=" * 70)
 
-        # ----------------------------------------------------
-        # RIPRODUCIBILITY
-        # ----------------------------------------------------
-
+        
+        # si impostano i seed per rendere riproducibili le operazioni casuali di PyTorch e NumPy
         torch.manual_seed(seed)
         np.random.seed(seed)
 
-        # ----------------------------------------------------
-        # MODEL
-        # ----------------------------------------------------
-
+        # inizializzazione della rete neurale
         model = GraphSAGE(
             in_channels=data.x.shape[1],
             hidden_channels=hidden_channels,
             out_channels=out_channels
         ).to(device)
 
+
+        # selezione dell'architettura del decoder
         if decoder_type == "mlp":
             decoder = MLPDecoder(
                 embedding_dim=out_channels,
@@ -150,20 +145,18 @@ def run_gnn_multiseed(
         else:
             decoder = DotProductDecoder().to(device)
 
-        # ----------------------------------------------------
-        # OPTIMIZER
-        # ----------------------------------------------------
 
+        # si crea l'ottimizzatore Adam
+        # l'ottimizzatore deve aggiornare sia i pesi dell'encoder
+        # e sia i pesi del decoder --> quanto questo contiene pesi addestrabili 
         optimizer = torch.optim.Adam(
             list(model.parameters())
             + list(decoder.parameters()),
             lr=learning_rate
         )
 
-        # ----------------------------------------------------
-        # TRAINING
-        # ----------------------------------------------------
-
+        # apprendimento da parte della rete e conservazione dei risultati
+        # del modello in un dizionario
         history = train_gnn(
             model=model,
             decoder=decoder,
@@ -179,66 +172,37 @@ def run_gnn_multiseed(
             seed=seed
         )
 
-        # ----------------------------------------------------
-        # TEST EDGE PREPARATION
-        # ----------------------------------------------------
 
-        test_pos_edge_index, _ = prepare_edges(
-            test_edges,
-            [],
-            node_to_idx
-        )
+        # si preparano separatamente gli archi positivi e negativi di test
+        test_pos_edge_index, _ = prepare_edges(test_edges, [], node_to_idx)
+        test_neg_edge_index, _ = prepare_edges([], test_negative_edges, node_to_idx)
 
-        test_neg_edge_index, _ = prepare_edges(
-            [],
-            test_negative_edges,
-            node_to_idx
-        )
-
+        #si spostano i tensori sul dispositivo del modello
         test_pos_edge_index = test_pos_edge_index.to(device)
         test_neg_edge_index = test_neg_edge_index.to(device)
 
+        # si uniscono gli archi positivi e gli archi negativi
+        test_edge_index = torch.cat([test_pos_edge_index,test_neg_edge_index],dim=1)
 
-        test_edge_index = torch.cat(
-            [
-                test_pos_edge_index,
-                test_neg_edge_index
-            ],
-            dim=1
-        )
-
-        # ----------------------------------------------------
-        # TEST PREDICTION
-        # ----------------------------------------------------
-
-        test_scores = predict_edges(
-            model,
-            decoder,
-            data,
-            test_edge_index
-        )
-
-        # ----------------------------------------------------
-        # TEST METRICS
-        # ----------------------------------------------------
+        # il modello calcola un punteggio per ogni coppia di nodi
+        # --> punteggi utilizzati per valutare quanto bene distingue
+        #     archi esistenti da archi non esistenti
+        test_scores = predict_edges(model, decoder, data, test_edge_index)
         
         n_positive = len(test_edges)
-        
-        test_metrics = evaluate_scores(
-            pos_scores=test_scores[:n_positive],
-            neg_scores=test_scores[n_positive:]
-        )
+    
+
+        # confronto punteggi positivi e negativi, restituendo AUC e AP
+        test_metrics = evaluate_scores(pos_scores=test_scores[:n_positive],neg_scores=test_scores[n_positive:])
         
         test_auc = test_metrics["auc"]
         test_ap = test_metrics["ap"]
 
-        # ----------------------------------------------------
-        # QUERY-BASED HITS@K
-        # ----------------------------------------------------
-
+        # si calcola la metrica hits@K per le coppie positive e negative
+        # associate alle query. La valutazione viene effettuata sulle coppie
+        # di test
         print()
         print("Computing query-based Hits@K...")
-
         (
             query_positive_scores,
             query_negative_scores
@@ -256,10 +220,9 @@ def run_gnn_multiseed(
             for k in HITS_K_VALUES
         }
 
-        # ----------------------------------------------------
-        # SAVE RESULT
-        # ----------------------------------------------------
 
+        # salvataggio delle informazioni principali relative al 
+        # modello addestrato con il seed specificato
         result = {
             "decoder": decoder_type,
             "seed": seed,
@@ -270,14 +233,13 @@ def run_gnn_multiseed(
             "test_auc": test_auc,
             "test_ap": test_ap,
         }
-        result.update(hits_results)
 
-        results.append(result)
 
-        # ----------------------------------------------------
-        # PRINT RESULT
-        # ----------------------------------------------------
+        result.update(hits_results)# si aggiungono al dizionario le metriche Hits@K
 
+        results.append(result) # si inserisce il risultato nella lista complessiva
+
+        # STAMPA DEI RISULTATI DEL SINGOLO SEED
         print()
         print(f"Seed:       {seed}")
         print(f"Best epoch: {history['best_epoch']}")
@@ -285,44 +247,39 @@ def run_gnn_multiseed(
         print(f"Val AP:     {history['best_val_ap']:.4f}")
         print(f"Test AUC:   {test_auc:.4f}")
         print(f"Test AP:    {test_ap:.4f}")
+
+        # stampa delle metriche hits@K
         for k in HITS_K_VALUES:
             print(f"Hits@{k}:    {hits_results[f'hits@{k}']:.4f}")
 
+
+    # se non è stato eseguito nemmeno un seed, non si può calcolare media 
+    # e deviazioni standard
     if not results:
         raise ValueError("La lista dei seed non può essere vuota.")
 
-    # ========================================================
-    # MULTI-SEED SUMMARY
-    # ========================================================
-
+    
     print()
     print("=" * 70)
     print("MULTI-SEED SUMMARY")
     print("=" * 70)
 
-    
+    # dizionario in cui si salva media e deviazione standard di ciascuna metrica
     summary = {}
 
     for metric in EVALUATION_METRICS:
 
-        values = np.array(
-            [result[metric] for result in results]
-        )
+        values = np.array([result[metric] for result in results])
 
         summary[metric] = {
             "mean": float(np.mean(values)),
             "std": float(np.std(values))
         }
 
-        print(
-            f"{metric:<10}: "
-            f"{np.mean(values):.4f} ± {np.std(values):.4f}"
-        )
+        print(f"{metric:<10}: {np.mean(values):.4f} ± {np.std(values):.4f}")
 
-    # --------------------------------------------------------
-    # RANGE
-    # --------------------------------------------------------
-
+    # per le metriche principali si stampa anche il minimo e il massimo 
+    # ottenuto tra i seed
     for metric in ["test_auc", "test_ap"] + [f"hits@{k}" for k in HITS_K_VALUES]:
 
         values = [
@@ -335,39 +292,49 @@ def run_gnn_multiseed(
         print(f"  min = {np.min(values):.4f}")
         print(f"  max = {np.max(values):.4f}")
 
-    return results
+    return results # restituisce la lista dei risultati 
 
 
 
 
-def run_gnn_experiments(
-    splits,
-    negatives,
-    queries,
-    original_graph,
-    data,
-    print_section,
+def run_gnn_experiments(splits, negatives, queries, 
+                        original_graph, data,print_section,
 ):
+    """
+    Coordina gli esperimenti GNN del progetto, esegue:
+    - controlli sulle feature;
+    - feature ablation
+    - confronto tra decoder.
+    """
+
+    # si estraggono dal dizionario degli split:
+    # - grafo usato per message passing;
+    # - archi supervisionati.
+
     message_passing_graph = splits["message_passing_graph"]
+
     supervised_train_edges = splits["supervised_train_edges"]
-    supervised_train_negative_edges = negatives[
-        "supervised_train_negative_edges"
-    ]
+    
+    supervised_train_negative_edges = negatives["supervised_train_negative_edges"]
+
+    # si estraggono gli archi di validation e test
     val_edges = splits["val_edges"]
     test_edges = splits["test_edges"]
 
+    # si controlla che le feature siano coerenti con il grafo ammesso per il training
+    # in particolare se le feature siano state estratte esclusivamente dal training graph
     if not verify_feature_source(
         original_graph,
         message_passing_graph,
         data,
     ):
-        raise RuntimeError(
-            "Feature GNN non coerenti con il grafo di training."
-        )
+        raise RuntimeError("Feature GNN non coerenti con il grafo di training.")
 
-    # --------------------------------------------------------
-    # Feature ablation
-    # --------------------------------------------------------
+
+
+    # si esegue lo studio di ablation, provando le configurazioni:
+    # full, degree, clustering e costant.
+    # per ciascuna configurazione addestra e valuta una GNN.
 
 
     feature_ablation_results = run_feature_ablation(
@@ -388,8 +355,12 @@ def run_gnn_experiments(
     )
 
 
+    # si preprara una lista di righe da esportare nel CSV, dove ogni riga
+    # corrisponde ad una modalità di feature
     feature_ablation_rows = []
 
+    # il dizionario restituito dall'ablation contiene una voce per ogni modalità
+    # e le relative metriche
     for mode, metrics in feature_ablation_results.items():
         feature_ablation_rows.append({
             "feature_mode": mode,
@@ -402,23 +373,22 @@ def run_gnn_experiments(
             "test_ap": metrics["test_ap"],
         })
 
+    # si esportano i risultati dell'ablation nel file CSV
     export_rows(
         feature_ablation_rows,
         RESULTS_DIR / f"{DATASET_NAME}_feature_ablation_results.csv",
     )
 
-    # --------------------------------------------------------
-    # Decoder comparison
-    # --------------------------------------------------------
-
     print_section("GNN DECODER COMPARISON")
 
     query_positive_edges, query_negative_edges = queries
-    gnn_results = {}
 
+    # esegue gli esperimenti per entrambi i decoder
+    gnn_results = {}
     for decoder_type in ("mlp", "dot_product"):
         print_section(f"GRAPHSAGE + {decoder_type.upper()}")
 
+        # per ciascun decoder si chiama la funzione multi-seed
         gnn_results[decoder_type] = run_gnn_multiseed(
             message_passing_graph=message_passing_graph,
             supervised_train_edges=supervised_train_edges,
@@ -439,6 +409,7 @@ def run_gnn_experiments(
             device=DEVICE,
         )
 
+    # si restituisce entrambi i gruppi di risultati
     return {
         "feature_ablation": feature_ablation_results,
         "decoder_comparison": gnn_results,
@@ -446,43 +417,57 @@ def run_gnn_experiments(
 
 
 
-
 def save_gnn_results(gnn_results, print_section):
-    """Salva risultati per seed e riepilogo aggregato in formato CSV."""
-    print_section("GNN FINAL RESULTS")
-
-    
+    """
+    Salva i risultati del confronto decoder, producendo:
+    - CSV con i risultati dettagliati per ogni seed
+    - CSV con media e deviazione standard
+    """
+    print_section("GNN FINAL RESULTS")    
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
+
+    # si unisce in un'unica lista i risultati di tutti i decoder
     all_gnn_results = [
         result
         for decoder_results in gnn_results.values()
         for result in decoder_results
     ]
 
+    # se non ci sono risultati non ha senso creare CSV
     if not all_gnn_results:
         raise RuntimeError("Nessun risultato GNN disponibile.")
 
     detailed_path = RESULTS_DIR / f"{DATASET_NAME}_gnn_decoder_results.csv"
 
-    export_rows(
-        all_gnn_results,
-        detailed_path,
-    )
+    export_rows(all_gnn_results, detailed_path)
 
+
+    # lista contenente tutte le righe del CSV riepilogativo
     summary_rows = []
-
     print()
+
+
+    # si prepara l'intestazione della tabella da stampare
     header = f"{'Model':<25}{'Test AUC':>23}{'Test AP':>23}"
     header += "".join([f"Hits@{k}".rjust(23) for k in HITS_K_VALUES])
+
+
     print(header)
     print("-" * len(header))
 
+
+
+    # si analizzano separatamente i risultati di ogni decoder
     for decoder_type, decoder_results in gnn_results.items():
+
+        # si saltano eventuali decoder senza risultati
         if not decoder_results:
             continue
 
+        
+        # per ogni metrica si raccolgono i valori ottenuti dai diversi seed  
         values = {
             metric: np.asarray(
                 [result[metric] for result in decoder_results],
@@ -491,17 +476,16 @@ def save_gnn_results(gnn_results, print_section):
             for metric in EVALUATION_METRICS
         }
 
-        label = (
-            "GraphSAGE + MLP"
-            if decoder_type == "mlp"
-            else "GraphSAGE + Dot Product"
-        )
+        label = ("GraphSAGE + MLP" if decoder_type == "mlp" 
+                 else "GraphSAGE + Dot Product")
 
+        # si selezionano le metrcihe che si vuole mostrare nella tabella
         displayed_metrics = (
             "test_auc",
             "test_ap",
         ) + tuple(f"hits@{k}" for k in HITS_K_VALUES)
 
+        # si stampa media e deviazione standard per ciascuna delle metriche selezionate
         print(
             f"{label:<25}"
             + "".join(
@@ -510,20 +494,18 @@ def save_gnn_results(gnn_results, print_section):
             )
         )
 
-        row = {
-            "decoder": decoder_type,
-            "num_seeds": len(decoder_results),
-        }
+        # si crea una riga riepilogativa per il CSV
+        row = {"decoder": decoder_type, "num_seeds": len(decoder_results)}
 
+        # per ogni metrica si salva la media e la deviazione standard
         for metric in EVALUATION_METRICS:
             row[f"{metric}_mean"] = float(np.mean(values[metric]))
             row[f"{metric}_std"] = float(np.std(values[metric]))
-
+        
         summary_rows.append(row)
 
+    # si definisce il percorso del CSV riepilogativo
     summary_path = RESULTS_DIR / f"{DATASET_NAME}_gnn_decoder_summary.csv"
 
-    export_rows(
-        summary_rows,
-        summary_path,
-    )
+    # si esportano le statistiche 
+    export_rows( summary_rows, summary_path)

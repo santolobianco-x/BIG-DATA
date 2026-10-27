@@ -1,6 +1,6 @@
-
-"""Configurazione dei metodi baseline per la link prediction."""
-
+"""
+MODULO PER LA CONFIGURAZIONE DEI METODI BASELINE PER LA LINK PREDICTION
+"""
 from src.baseline import (
     common_neighbors_scores,
     jaccard_scores,
@@ -10,7 +10,11 @@ from src.baseline import (
 
 
 def get_baseline_methods():
-    """Restituisce i metodi baseline disponibili."""
+    """
+    Il dizionario restituito funge da interfaccia unificata, dove:
+    - la chiave è il nome che comparirà nei log e nei grafici
+    - il valore è la funzione matematica effettiva
+    """
     return {
         "Common Neighbors": common_neighbors_scores,
         "Jaccard": jaccard_scores,

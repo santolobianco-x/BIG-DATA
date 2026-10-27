@@ -1,13 +1,19 @@
+"""
+MODULO DEDICATO ALLA FORMATTAZIONE E STAMPA DEI RISULTATI
+"""
+
 def print_section(title):
-    """Stampa un titolo di sezione."""
     print()
     print("=" * 70)
-    print(title)
+    print(title) # stampa un titolo di sezione
     print("=" * 70)
+
 
 
 def print_graph_summary(graph, graph_statistics, degree_statistics):
-    """Stampa le statistiche generali e di grado del grafo."""
+    """Stampa le statistiche generali e di grado del grafo.
+    Vengono passate le funzioni per calcolare le statistiche come parametri,
+    rendendo questa funzione indipendente dall'implementazione matematica."""
     graph_stats = graph_statistics(graph)
     degree_stats = degree_statistics(graph)
 
@@ -21,8 +27,11 @@ def print_graph_summary(graph, graph_statistics, degree_statistics):
     print(f"Median:      {degree_stats['median_degree']}")
 
 
+
 def print_baseline_results(title, results, hits_results):
-    """Stampa AUC, AP e Hits@K delle baseline."""
+    """Stampa AUC, AP e Hits@K per i metodi delle baseline.
+    - results (dict): dizionario con le metriche
+    - hits_results (dict): dizionario con le metriche Hits@k per ogni baseline"""
     print_section(title)
 
     print(

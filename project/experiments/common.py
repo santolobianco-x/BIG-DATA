@@ -1,50 +1,34 @@
+"""
+MODULO CONDIVISO PER LA VALUTAZIONE DELLE BASELINE TRADIZIONALI
+
+--> valuta in modo comune per le baseline la metrica hits@K
+"""
+
 from src.evaluation import hits_at_k
 
-def evaluate_baseline_hits(
-        G,
-        query_positive_edges,
-        query_negative_edges,
-        scoring_function,
-        name,
-        k_values=(10, 50, 100),
-):
+def evaluate_baseline_hits(G, query_positive_edges,query_negative_edges,
+        scoring_function, name, k_values=(10, 50, 100)):
     """
-    Calcola Hits@K di un baseline su un insieme di query.
+    Calcola la metrica Hits@K per una specifica baseline tradizionale.
+    Vengono valutate con lo stesso identico rigore, lo stesso meccanismo
+    di appiattimento dei distrattori e le stesse penalità sui pareggi.
 
-    Parameters
-    ----------
-    G : networkx.Graph
-        Grafo utilizzato per calcolare gli score.
-        Per la valutazione deve essere il grafo di training.
-
-    query_positive_edges : iterable
-        Un arco positivo per ogni query.
-
-    query_negative_edges : iterable of iterables
-        Archi negativi candidati per ciascuna query.
-
-    scoring_function : callable
-        Funzione con firma scoring_function(G, edges).
-
-    name : str
-        Nome del baseline, utilizzato nel logging.
-
-    k_values : iterable of int
-        Valori di K per i quali calcolare Hits@K.
-
-    Returns
-    -------
-    dict
-        Dizionario {K: Hits@K}.
+    - scoring_function --> funzione euristica da valutare
     """
-    # Initial logic and parameters are validated
+
+    # standardizzazione dei tipi per evitare bug
     query_positive_edges = list(query_positive_edges)
+
+
     query_negative_edges = [
         list(edges)
         for edges in query_negative_edges
     ]
+
     k_values = tuple(k_values)
 
+
+    # controllo eventuali errori
     if not query_positive_edges:
         raise ValueError("L'insieme delle query positive è vuoto.")
 
@@ -60,13 +44,14 @@ def evaluate_baseline_hits(
     if any(k <= 0 for k in k_values):
         raise ValueError("Tutti i valori di K devono essere positivi.")
 
+    
+
     print()
     print(f"Computing Hits@K for {name}...")
 
-    positive_scores = scoring_function(
-        G,
-        query_positive_edges,
-    )
+
+    # applica la funzione di scoring
+    positive_scores = scoring_function(G, query_positive_edges,)
 
     if len(positive_scores) != len(query_positive_edges):
         raise ValueError(
@@ -74,23 +59,24 @@ def evaluate_baseline_hits(
             "con il numero di query."
         )
 
-    # Vettorizzazione: valutazione flat e ricostruzione
+    # si utilizza un'unica lista per sfruttare la vettorizzazione interna
     flat_negative_edges = [
         edge
         for query_edges in query_negative_edges
         for edge in query_edges
     ]
 
-    flat_scores = scoring_function(
-        G,
-        flat_negative_edges,
-    )
+    # calcolo dello scoring per i negativi
+    flat_scores = scoring_function(G, flat_negative_edges)
 
     if len(flat_scores) != len(flat_negative_edges):
         raise ValueError(
             f"{name}: numero di score negativi restituiti non coerente."
         )
 
+
+
+    # si ricostruisce la lista tagliandola a fette 
     n_negatives = len(query_negative_edges[0])
     negative_scores = [
         flat_scores[i * n_negatives : (i + 1) * n_negatives]

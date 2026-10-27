@@ -1,3 +1,9 @@
+"""
+MODULO DEDICATO AI CONTROLLI DI INTEGRITA' SUI DATI
+
+--> esegue verifiche matematiche rigorose tramite l'uso della teoria degli insieme
+per evitare Data Leakage
+"""
 import torch
 import networkx as nx
 
@@ -6,34 +12,21 @@ import networkx as nx
 # ============================================================
 
 def canonical_edge(u, v):
-    """
-    Restituisce un arco non orientato in forma canonica.
-    """
-
-    return tuple(sorted((u, v)))
+    return tuple(sorted((u, v))) # restituisce un arco in forma canonica o ordinata
 
 
 def canonical_edges(edges):
-    """
-    Converte una lista di archi nella rappresentazione canonica.
-    """
-
     return {
         canonical_edge(u, v)
         for u, v in edges
-    }
+    } # converte una lista di archi in un set di archi canonici
 
 
 # ============================================================
 # POSITIVE EDGE SANITY CHECK
 # ============================================================
 
-def verify_positive_split(
-    G,
-    train_graph,
-    val_edges,
-    test_edges
-):
+def verify_positive_split(G, train_graph, val_edges, test_edges):
     """
     Verifica che gli archi positivi siano:
 
@@ -79,9 +72,6 @@ def verify_positive_split(
         f"Test           : {len(test_edges_set)}"
     )
 
-    # --------------------------------------------------------
-    # Membership
-    # --------------------------------------------------------
 
     train_valid = train_edges <= original_edges
     val_valid = val_edges_set <= original_edges
@@ -101,10 +91,6 @@ def verify_positive_split(
     print(
         f"Test ⊆ Original: {test_valid}"
     )
-
-    # --------------------------------------------------------
-    # Disjointness
-    # --------------------------------------------------------
 
     train_val = train_edges & val_edges_set
     train_test = train_edges & test_edges_set
@@ -137,9 +123,9 @@ def verify_positive_split(
     print()
 
     if valid:
-        print("✓ Positive split valido")
+        print("Positive split valido")
     else:
-        print("✗ Positive split NON valido")
+        print("Positive split NON valido")
 
     return valid
 
@@ -148,13 +134,8 @@ def verify_positive_split(
 # NEGATIVE EDGE SANITY CHECK
 # ============================================================
 def verify_negative_edges(
-    G,
-    train_graph,
-    train_negative_edges,
-    val_negative_edges,
-    test_negative_edges,
-    val_edges,
-    test_edges
+    G, train_graph, train_negative_edges, val_negative_edges,
+    test_negative_edges, val_edges, test_edges
 ):
     """
     Verifica che gli archi negativi:
@@ -208,9 +189,9 @@ def verify_negative_edges(
 
     print()
     if valid:
-        print("✓ Negative sampling valido")
+        print("Negative sampling valido")
     else:
-        print("✗ Negative sampling NON valido")
+        print("Negative sampling NON valido")
 
     return valid
 
@@ -218,16 +199,10 @@ def verify_negative_edges(
 # ISOLATED NODE ANALYSIS
 # ============================================================
 
-def analyze_isolated_nodes(
-    train_graph,
-    val_edges,
-    test_edges,
-    graph_name="train"
-):
+def analyze_isolated_nodes(train_graph, val_edges, test_edges, graph_name="train"):
     """
-    Analizza quanti nodi diventano isolati nel training graph
-    a causa dell'edge split e quanti archi di validation/test
-    coinvolgono tali nodi.
+    Analizza quanti nodi diventano isolati nel training graph a causa 
+    dell'edge split e quanti archi di validation/test coinvolgono tali nodi.
     """
 
     print()
@@ -291,55 +266,40 @@ def analyze_isolated_nodes(
 def compute_expected_features(G):
     """
     Calcola manualmente le feature utilizzate dal modello:
-
-    1. grado normalizzato;
-    2. clustering coefficient.
+    - grado normalizzato;
+    - clustering coefficient.
     """
 
     nodes = list(G.nodes())
 
-    degrees = [
-        G.degree(node)
-        for node in nodes
-    ]
+    degrees = [G.degree(node) for node in nodes]
 
     max_degree = max(degrees)
 
-    clustering = {
-        node: value
-        for node, value
-        in nx.clustering(G).items()
-    }
+    clustering = { node: value for node, value in nx.clustering(G).items()}
 
     features = torch.tensor(
-        [
-            [
-                degree / max_degree,
-                clustering[node]
-            ]
+        [[degree / max_degree, clustering[node]]
             for node, degree
             in zip(nodes, degrees)
         ],
         dtype=torch.float
     )
 
-    return features
+    return features #contiene sia il grado normalizzato e sia il clustering
 
 
 # ============================================================
 # FEATURE SOURCE CHECK
 # ============================================================
 
-def verify_feature_source(
-    G,
-    train_graph,
-    data
-):
+def verify_feature_source(G, train_graph, data):
     """
-    Verifica che le feature utilizzate dalla GNN siano
-    calcolate dal training graph e non dal grafo completo.
+    Verifica che le feature utilizzate dalla GNN siano calcolate dal training 
+    graph e non dal grafo completo.
 
-    Questo serve a escludere leakage informativo.
+    Se le feature fossero calcolate sul grafo originale, passerebbero informazioni
+    sui test edges (i quali esistono nell'originale) falsando le predizioni.
     """
 
     print()
@@ -355,30 +315,17 @@ def verify_feature_source(
         train_graph
     )
 
-    actual_features = (
-        data.x.cpu()
-    )
+    actual_features = data.x.cpu() # prende i tensori delle feature reali che la pipeline ha appena costruito
 
-    max_difference_original = torch.max(
-        torch.abs(
-            actual_features
-            -
-            original_features
-        )
-    ).item()
+    max_difference_original = torch.max(torch.abs( actual_features - original_features)).item()
+    #se è uguale l'errore massimo tra i valori allora l'errore è 0
 
-    max_difference_train = torch.max(
-        torch.abs(
-            actual_features
-            -
-            train_features
-        )
-    ).item()
+    max_difference_train = torch.max(torch.abs( actual_features - train_features)).item()
 
     matches_original = torch.allclose(
         actual_features,
         original_features
-    )
+    ) # verifica se sono vicini, ignorando decimali piccolissimi
 
     matches_train = torch.allclose(
         actual_features,
@@ -409,13 +356,11 @@ def verify_feature_source(
 
     if matches_train:
         print(
-            "✓ Le feature corrispondono "
-            "al training graph."
+            "Le feature corrispondono al training graph."
         )
     else:
         print(
-            "✗ Le feature NON corrispondono "
-            "al training graph."
+            "Le feature NON corrispondono al training graph."
         )
 
     return matches_train
@@ -440,7 +385,7 @@ def verify_gnn_split(
     - la loro unione ricostruisca il training graph;
     - validation e test non siano nel grafo di message passing;
     - i negativi di supervisione non appartengano al grafo originale
-      del training e siano disgiunti dai negativi di validation e test.
+    del training e siano disgiunti dai negativi di validation e test.
     """
     print()
     print("=" * 60)
@@ -477,9 +422,9 @@ def verify_gnn_split(
 
     print()
     print(
-        "✓ GNN split valido"
+        "GNN split valido"
         if valid
-        else "✗ GNN split NON valido"
+        else "GNN split NON valido"
     )
 
     return valid

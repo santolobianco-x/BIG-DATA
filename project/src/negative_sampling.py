@@ -1,12 +1,14 @@
+"""
+MODULO DEDICATO ALLA GENERAZIONE DEGLI ARCHI NEGATIVI
+
+--> Per poter addestrare un modello a distinguere collegamenti veri da quelli
+falsi, si devono generare artificialmente degli esempi negativi.
+"""
+
 import random
 
 
-def generate_negative_edges(
-    G,
-    num_edges,
-    seed=42,
-    forbidden_edges=None
-):
+def generate_negative_edges(G, num_edges, seed=42, forbidden_edges=None):
     """
     Genera archi negativi casuali senza duplicati.
 
@@ -37,10 +39,10 @@ def generate_negative_edges(
             for edge in forbidden_edges
         }
 
-    # Numero massimo di coppie non orientate fra nodi distinti.
+    # numero massimo di coppie non orientate fra nodi distinti.
     max_possible = len(nodes) * (len(nodes) - 1) // 2
-
-    # Le coppie reali e quelle vietate non sono disponibili.
+    
+    # coppie vietate + archi veri
     unavailable = {
         tuple(sorted((u, v)))
         for u, v in G.edges()
@@ -70,15 +72,10 @@ def generate_negative_edges(
 
         negative_edges.add(edge)
 
-    return list(negative_edges)
+    return list(negative_edges) # lista di archi negativi
 
 
-def generate_query_negative_edges(
-    G,
-    positive_edges,
-    num_negatives_per_query=999,
-    seed=42
-):
+def generate_query_negative_edges(G, positive_edges, num_negatives_per_query=999, seed=42):
     """
     Genera candidati negativi distinti per ogni query positiva.
     Le coppie generate non devono essere archi del grafo.

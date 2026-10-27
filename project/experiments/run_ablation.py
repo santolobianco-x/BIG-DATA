@@ -1,4 +1,9 @@
+"""
+MODULO PER LO STUDIO DI ABLAZIONE SULLE FEATURE DEI NODI
 
+--> testa la GNN asportando le informazioni di partenza, per isolare 
+    quale informazione guida davvero la performance della rete.
+"""
 import torch
 import numpy as np
 
@@ -12,7 +17,6 @@ from src.gnn import (
 )
 
 from src.evaluation import evaluate_scores
-
 
 def run_feature_ablation(
     message_passing_graph,
@@ -31,24 +35,16 @@ def run_feature_ablation(
     device="cpu"
 ):
     """
-    Confronta quattro configurazioni di feature:
-    - full
-    - degree
-    - clustering
-    - constant
-
-    L'encoder utilizza soltanto il message-passing graph.
-    Il decoder viene addestrato sugli archi supervisionati.
-    Il checkpoint migliore viene selezionato sulla validation.
-    Il test viene utilizzato esclusivamente per la valutazione.
+    Esegue addestramento e valutazione della GNN usando 
+    4 configurazioni diverse. Le configurazioni sono:
+    - full --> configurazione completa di riferimento;
+    - degree --> informazione sul numero di vicini del nodo;
+    - clustering --> informazione che descrive quanto i vicini
+            di un nodo siano collegati tra loro
+    - constant --> assenza di informazioni iniziali che distinguano i nodi
     """
 
-    feature_modes = [
-        "full",
-        "degree",
-        "clustering",
-        "constant"
-    ]
+    feature_modes = ["full", "degree", "clustering","constant"]
 
     results = {}
 
@@ -56,93 +52,71 @@ def run_feature_ablation(
     print("FEATURE ABLATION STUDY")
     print("=" * 70)
 
+    # esegue il ciclo per ogni configurazione
+    # ricrea i dati, inizializza un modello, lo allena e lo valuta
     for mode in feature_modes:
 
         print("\n" + "-" * 70)
         print(f"FEATURE CONFIGURATION: {mode.upper()}")
         print("-" * 70)
 
-        # ----------------------------------------------------
-        # 1. RIPRODUCIBILITÀ
-        # ----------------------------------------------------
-
+        # azzeramento seed per ogni run
         torch.manual_seed(seed)
         np.random.seed(seed)
 
-        # ----------------------------------------------------
-        # 2. CREAZIONE DEL GRAFO PYTORCH GEOMETRIC
-        # ----------------------------------------------------
-
-        data, node_to_idx = networkx_to_pyg(
-            message_passing_graph,
-            feature_mode=mode
-        )
-
+        # creazione del grafo pythorch geometric
+        data, node_to_idx = networkx_to_pyg(message_passing_graph,feature_mode=mode)
         data = data.to(device)
 
         if mode == "constant":
-            degrees = torch.bincount(
-                data.edge_index[0],
-                minlength=data.num_nodes
-            )
+            degrees = torch.bincount(data.edge_index[0],minlength=data.num_nodes)
 
-            print(
-                "Feature rows uniche:",
-                torch.unique(data.x, dim=0).size(0)
-            )
-            print(
-                "Nodi isolati nel message-passing graph:",
-                (degrees == 0).sum().item()
-            )
-            print(
-                "Nodi non isolati:",
-                (degrees > 0).sum().item()
-            )
+            # controlla se tutti i nodi hanno le stesse feature iniziali
+            print( "Feature rows uniche:", torch.unique(data.x, dim=0).size(0))
+
+            # analizza quanti nodi sono isolati e quanti no
+            print( "Nodi isolati nel message-passing graph:", (degrees == 0).sum().item())
+            print("Nodi non isolati:",(degrees > 0).sum().item())
+
 
         print(f"Input features: {data.x.shape[1]}")
         print(f"Nodes: {data.num_nodes}")
-        print(
-            "Message-passing edges: "
-            f"{data.edge_index.shape[1]}"
-        )
-        print(
-            "Supervised positive edges: "
-            f"{len(supervised_train_edges)}"
-        )
-        print(
-            "Supervised negative edges: "
-            f"{len(supervised_train_negative_edges)}"
-        )
+        print(f"Message-passing edges: {data.edge_index.shape[1]}")
+        print(f"Supervised positive edges: {len(supervised_train_edges)}")
+        print(f"Supervised negative edges: {len(supervised_train_negative_edges)}")
 
-        # ----------------------------------------------------
-        # 3. CREAZIONE DEL MODELLO
-        # ----------------------------------------------------
-
+        # creazione del modello
         model = GraphSAGE(
-            in_channels=data.x.shape[1],
-            hidden_channels=hidden_channels,
-            out_channels=out_channels
+            in_channels=data.x.shape[1], # numero feature di ciascun nodo
+            hidden_channels=hidden_channels, # dimensione dello strato nascosto
+            out_channels=out_channels # embedding finale di ogni nodo
         ).to(device)
 
+        # creazione del decoder MLP
         decoder = MLPDecoder(
             embedding_dim=out_channels,
             hidden_dim=decoder_hidden_dim
         ).to(device)
 
-        # ----------------------------------------------------
-        # 4. OPTIMIZER
-        # ----------------------------------------------------
-
+        # adam deve aggiornare sia i parametri dell'encoder e 
+        # sia i parametri del decoder
+        # model.parameters() restituisce i parametri di GraphSAGE
+        # decoder.parameters() restituisce quelli dell'MLP
         optimizer = torch.optim.Adam(
             list(model.parameters())
             + list(decoder.parameters()),
             lr=learning_rate
         )
 
-        # ----------------------------------------------------
-        # 5. TRAINING
-        # ----------------------------------------------------
+        # si avvia l'addestramento
 
+        # train_gnn gestisce il ciclo sulle epoche, calcola la loss, 
+        # gli aggiornamenti dei pesi e la valutazione sul validation set
+
+        # keep_ratio=1.0 permette di mantenere tutti gli archi disponibili
+        # per il message passing 
+
+        # history conterrà tutte le informazioni sul training
         history = train_gnn(
             model=model,
             decoder=decoder,
@@ -158,10 +132,7 @@ def run_feature_ablation(
             seed=seed
         )
 
-        # ----------------------------------------------------
-        # 6. CONVERSIONE DEGLI ARCHI DI TEST
-        # ----------------------------------------------------
-
+        
         test_edge_index, _ = prepare_edges(
             test_edges,
             test_negative_edges,
@@ -170,13 +141,11 @@ def run_feature_ablation(
 
         test_edge_index = test_edge_index.to(device)
 
-        # ----------------------------------------------------
-        # 7. PREDIZIONI SUL TEST
-        # ----------------------------------------------------
-
+        # imposta encoder e decoder in modalità valutazione
         model.eval()
         decoder.eval()
 
+        # si calcolano i punteggi predetti per tutte le coppie di test
         test_scores = predict_edges(
             model=model,
             decoder=decoder,
@@ -184,45 +153,37 @@ def run_feature_ablation(
             edge_index=test_edge_index
         )
 
-        # ----------------------------------------------------
-        # 8. SEPARAZIONE POSITIVI E NEGATIVI
-        # ----------------------------------------------------
-
         n_positive = len(test_edges)
 
-        positive_scores = (
-            test_scores[:n_positive]
-            .detach()
-            .cpu()
-            .numpy()
-        )
+        # separazione score positivi da score negativi
+        positive_scores = (test_scores[:n_positive].detach().cpu().numpy())
+        negative_scores = (test_scores[n_positive:].detach().cpu().numpy())
 
-        negative_scores = (
-            test_scores[n_positive:]
-            .detach()
-            .cpu()
-            .numpy()
-        )
 
-        # ----------------------------------------------------
-        # 9. DIAGNOSTICA APPROFONDITA: FEATURE CONSTANT
-        # ----------------------------------------------------
-
+        
         if mode == "constant":
+
+            # si disattiva il calcolo dei gradienti perchè si vogliono osservare
+            # gli embedding
 
             with torch.no_grad():
                 z = model(data.x, data.edge_index)
 
+            # si riconta il grado dei nodi del grafo di message passing
             degrees = torch.bincount(
                 data.edge_index[0],
                 minlength=data.num_nodes
             )
 
+            # maschera nodi isolati
             isolated = degrees == 0
+
+            # maschera nodi non isolati
             non_isolated = degrees > 0
 
             z_isolated = z[isolated]
             z_non_isolated = z[non_isolated]
+
 
             print("\n" + "=" * 60)
             print("CONSTANT FEATURE DIAGNOSTICS")
@@ -230,47 +191,40 @@ def run_feature_ablation(
 
             print("Embedding shape:", tuple(z.shape))
 
-            print(
-                "Unique embeddings exact:",
-                torch.unique(z, dim=0).size(0)
-            )
+            # numero di embedding esattamente distinti
+            print("Unique embeddings exact:", torch.unique(z, dim=0).size(0))
 
+
+            """
+            si ripete il conteggio dopo aver arrotondato i valori 
+            a sei cifre decimali, serve a vedere se embedding 
+            leggeremente diversi diventano uguali
+            a precisione ridotta
+            """
             print(
                 "Unique embeddings rounded 6dp:",
-                torch.unique(
-                    z.round(decimals=6),
-                    dim=0
-                ).size(0)
+                torch.unique(z.round(decimals=6),dim=0).size(0)
             )
 
-            print(
-                "Embedding std complessiva:",
-                z.std().item()
-            )
+            # deviazione standard di tutti gli elementi della matrice
+            print("Embedding std complessiva:", z.std().item())
+
+            # si controlla se esiste almeno un nodo di questo tipo e si
+            # analizza l'embending dei nodi non isolati
+
 
             if z_non_isolated.size(0) > 0:
-                print(
-                    "Max difference non-isolated:",
-                    (
-                        z_non_isolated - z_non_isolated[0]
-                    ).abs().max().item()
+                # 0 significa che tutti coincidono esattamente con lo stesso embedding
+                print("Max difference non-isolated:",
+                    (z_non_isolated - z_non_isolated[0]).abs().max().item()
                 )
+                
+                print("Std embedding nodi non isolati:", z_non_isolated.std().item())
 
-                print(
-                    "Std embedding nodi non isolati:",
-                    z_non_isolated.std().item()
-                )
-
+            
             if z_isolated.size(0) > 0:
-                print(
-                    "Std embedding nodi isolati:",
-                    z_isolated.std().item()
-                )
-
-                print(
-                    "Max absolute isolated embedding:",
-                    z_isolated.abs().max().item()
-                )
+                print( "Std embedding nodi isolati:",z_isolated.std().item())
+                print( "Max absolute isolated embedding:", z_isolated.abs().max().item())
 
             print("\nPositive scores:")
             print("  Min:", float(np.min(positive_scores)))
@@ -293,10 +247,8 @@ def run_feature_ablation(
                 bool(np.isfinite(negative_scores).all())
             )
 
-        # ----------------------------------------------------
-        # 10. METRICHE DI TEST
-        # ----------------------------------------------------
-
+        # si calcolano le metriche confrontando i punteggi degli archi
+        # positivi con quelli degli archi negativi
         test_metrics = evaluate_scores(
             positive_scores,
             negative_scores
@@ -305,10 +257,7 @@ def run_feature_ablation(
         test_auc = test_metrics["auc"]
         test_ap = test_metrics["ap"]
 
-        # ----------------------------------------------------
-        # 11. SALVATAGGIO RISULTATI
-        # ----------------------------------------------------
-
+        # dizionario associato alla configurazione corrente
         results[mode] = {
             "input_features": data.x.shape[1],
             "best_epoch": history["best_epoch"],
@@ -319,9 +268,6 @@ def run_feature_ablation(
             "test_ap": test_ap
         }
 
-        # ----------------------------------------------------
-        # 12. OUTPUT
-        # ----------------------------------------------------
 
         print()
         print(f"Best epoch:       {history['best_epoch']}")
@@ -330,9 +276,9 @@ def run_feature_ablation(
         print(f"Test AUC:         {test_auc:.4f}")
         print(f"Test AP:          {test_ap:.4f}")
 
-    # ========================================================
+
     # TABELLA FINALE
-    # ========================================================
+    # si stampa una tabella per confrontare le metriche
 
     print("\n" + "=" * 70)
     print("FEATURE ABLATION RESULTS")
@@ -361,6 +307,8 @@ def run_feature_ablation(
 
     print("=" * 70)
 
-    return results
+    # restituisce tutti i risultati per permettere al codice chiamante
+    # di salvarli in un CSV, creare grafici o eseguire altre analisi.
+    return results 
 
 

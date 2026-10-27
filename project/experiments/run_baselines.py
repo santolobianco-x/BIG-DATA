@@ -1,16 +1,27 @@
+"""
+MODULO DI ORCHESTRAZIONE PER GLI ESPERIMENTI SULLE BASELINE TRADIZIONALI
+-> funge da direttore dei lavori per le euristiche classiche.
+    Recupera dati, inietta le funzioni matematiche, esegue test e conserva i risultati.
+"""
+
 from experiments.baseline_setup import get_baseline_methods
 from experiments.baseline_evaluation import evaluate_baselines
 from experiments.run_degree_bias import run_degree_bias_experiment
 
 from config import RESULTS_DIR, HITS_K_VALUES, DATASET_NAME
-from experiments.export_results import (
-    export_rows,
-    flatten_degree_bias_results,
-)
+from experiments.export_results import export_rows, flatten_degree_bias_results
+
 
 
 def run_baseline_experiments(splits, negatives, queries, print_section):
-    """Esegue le baseline sui due grafi previsti dal protocollo."""
+    """
+
+    Esegue le baselie matematiche sui dati di test:
+    - valuta su train_graph completo;
+    - valuta sul message_passing_graph --> utile a fare un confronto
+        con l'ambiente in cui opera la GNN.
+
+    """
 
     baseline_methods = get_baseline_methods()
 
@@ -18,7 +29,9 @@ def run_baseline_experiments(splits, negatives, queries, print_section):
     test_edges = splits["test_edges"]
     test_negative_edges = negatives["test_negative_edges"]
 
-    # Protocollo originale: train_graph.
+    # scenario ideale per le Baseline, poiche hanno a disposizione
+    # la massima quantità di topologia possibile senza commettere 
+    # data-leakage
     baseline_results, baseline_hits = evaluate_baselines(
         graph=splits["train_graph"],
         test_edges=test_edges,
@@ -30,7 +43,8 @@ def run_baseline_experiments(splits, negatives, queries, print_section):
         print_section=print_section,
     )
 
-    # Protocollo alternativo: message_passing_graph.
+    # scenario in cui vengono rimossi gli archi di supervisione 
+    # per analizzare se le rimozioni danneggiano le metriche classiche
     (
         message_passing_baseline_results,
         message_passing_baseline_hits,
@@ -45,38 +59,26 @@ def run_baseline_experiments(splits, negatives, queries, print_section):
         print_section=print_section,
     )
 
-
     baseline_rows = []
 
+    # aggrega i risultati di entrambi i protocolli
     for graph_name, results, hits_results in [
-        (
-            "train_graph",
-            baseline_results,
-            baseline_hits,
-        ),
-        (
-            "message_passing_graph",
-            message_passing_baseline_results,
-            message_passing_baseline_hits,
-        ),
+        ("train_graph",baseline_results,baseline_hits),
+        ("message_passing_graph",message_passing_baseline_results,message_passing_baseline_hits)
     ]:
         for baseline, metrics in results.items():
-            row = {
-                "graph": graph_name,
-                "baseline": baseline,
-                "auc": metrics["auc"],
-                "ap": metrics["ap"],
-            }
+            # riga base del CSV
+            row = {"graph": graph_name, "baseline": baseline,
+                   "auc": metrics["auc"],"ap": metrics["ap"]}
 
+            # aggiunge colonne per ogni k di Hits@K richiesto
             for k in HITS_K_VALUES:
                 row[f"hits@{k}"] = hits_results[baseline][k]
 
             baseline_rows.append(row)
 
-    export_rows(
-        baseline_rows,
-        RESULTS_DIR / f"{DATASET_NAME}_baseline_results.csv",
-    )
+    # scrive su disco i risultati
+    export_rows(baseline_rows, RESULTS_DIR / f"{DATASET_NAME}_baseline_results.csv")
 
     return {
         "methods": baseline_methods,
@@ -88,13 +90,15 @@ def run_baseline_experiments(splits, negatives, queries, print_section):
 
 
 
-def run_additional_baseline_analyses(
-    splits,
-    negatives,
-    methods,
-    print_section,
-):
+def run_additional_baseline_analyses(splits, negatives, methods):
+    """
+    Esegue e salva su disco le analisi secondarie(es. degree Bias). 
+    Si separano queste analisi per rendere il codice modulare e 
+    disabilitarle se non sono necessarie.
+    """
 
+    # analisi del bias fatta sui train_graph per cacolare accuratamente
+    # i gradi dei nodi
     degree_bias_results = run_degree_bias_experiment(
         train_graph=splits["train_graph"],
         positive_edges=splits["test_edges"],
@@ -102,9 +106,7 @@ def run_additional_baseline_analyses(
         scoring_functions=methods,
     )
 
-    export_rows(
-        flatten_degree_bias_results(degree_bias_results),
-        RESULTS_DIR / f"{DATASET_NAME}_degree_bias_results.csv",
-    )
+    # esporta i risultati appiattendoli in un formato tabellare
+    export_rows(flatten_degree_bias_results(degree_bias_results),RESULTS_DIR / f"{DATASET_NAME}_degree_bias_results.csv")
 
     return degree_bias_results

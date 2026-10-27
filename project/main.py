@@ -1,3 +1,15 @@
+"""
+ENTRY POINT DEL PROGETTO
+
+Lo script orchestra l'intera pipeline sperimentale per la Link Prediction.
+Le operazioni che vengono svolte sono:
+    - caricamento e ispezione del dataset;
+    - suddivisione dei dati e negative sampling;
+    - controlli anti-leakage;
+    - valutazione euristiche classiche;
+    - valutazione GNN.
+"""
+
 import argparse
 
 from config import DATASET_PATH, SEED, DATASET_NAME
@@ -32,10 +44,13 @@ from experiments.run_gnn import (
 
 
 def parse_args():
-    """Legge la modalità di esecuzione richiesta."""
-    parser = argparse.ArgumentParser(
-        description="Pipeline di link prediction con baseline e GNN."
-    )
+    """
+    Gestisce gli argomenti da riga di comando(CLI) e permette di eseguire
+    selettivamente solo una parte degli esperimenti, risparmiando tempo durante 
+    la fase di testing e debugging.
+    """
+    parser = argparse.ArgumentParser(description="Pipeline di link prediction con baseline e GNN.")
+
     parser.add_argument(
         "--run",
         choices=("all", "baselines", "gnn"),
@@ -45,12 +60,19 @@ def parse_args():
     return parser.parse_args()
 
 
+#funzione principale che esegue l'intera metadologia della tesi
 def main():
+    
     args = parse_args()
 
+
+    """
+    blocco assoluto dei generatori casuali per garantire che
+    l'esperimento sia matematicamente riproducibile al 100%
+    """
     set_global_seed(SEED)
 
-    # 1. Load and inspect the graph.
+    # caricamento del dataset ed esplorazione
     print_section("LOADING GRAPH")
     print(f"Dataset: {DATASET_PATH}")
 
@@ -60,20 +82,31 @@ def main():
     print_graph_summary(graph, graph_statistics, degree_statistics)
 
     print_section("DEGREE DISTRIBUTION")
+
+    #genera il grafo a coda lunga tipico delle reti sociali
     plot_degree_distribution(graph, f"Degree Distribution - {DATASET_NAME}")
 
-    # 2. Split positive edges and generate negative examples.
+
+
+    """
+    suddivide il grafo garantendo che nessun arco di test/val 
+    venga utilizzato per l'addestramento e genera i distrattori(negative sampling)
+    """
     splits = prepare_graph_splits(graph)
     negatives = prepare_negative_edges(graph, splits)
 
-    # 3. Validate the data protocol before experiments.
+
+    # assicura matematicamente che non ci siano sovrapposizioni illecite
     run_sanity_checks(graph, splits, negatives, print_section)
 
-    # 4. Prepare the fixed Hits@K candidate sets.
+    # crea i set candidati per il calcolo di hits@K
     queries = prepare_hits_queries(graph, splits["test_edges"])
 
-    # 5. Run baseline experiments when requested.
+    # esperimenti sulle baseline tradizionali nelle modalità 'all' e 'baselines'
     if args.run in ("all", "baselines"):
+        # esegue le formule matematiche su entrambi i protocolli:
+        #   --> train
+        #   --> message-passing
         baseline_results = run_baseline_experiments(
             splits=splits,
             negatives=negatives,
@@ -81,13 +114,14 @@ def main():
             print_section=print_section,
         )
 
+        #analisi del degree bias
         run_additional_baseline_analyses(
             splits=splits,
             negatives=negatives,
-            methods=baseline_results["methods"],
-            print_section=print_section,
+            methods=baseline_results["methods"]
         )
 
+        # stampa dei risultati finali per le baseline
         print_baseline_results(
             "FINAL COMPARISON - BASELINES ON TRAIN GRAPH",
             baseline_results["train_results"],
@@ -100,13 +134,15 @@ def main():
             baseline_results["message_passing_hits"],
         )
 
-    # 6. Run GNN experiments when requested.
+    # esperimenti con graph neural network nelle modalità 'all' e 'gnn'
     if args.run in ("all", "gnn"):
+        # converte il grafo in tensore per la scheda video
         data = prepare_gnn_data(
             splits["message_passing_graph"],
             print_section=print_section,
         )
 
+        # lancia lo studio di ablazione e il training multi-seed
         gnn_experiments = run_gnn_experiments(
             splits,
             negatives,
@@ -116,6 +152,7 @@ def main():
             print_section=print_section,
         )
 
+        # esporta report in CSV
         save_gnn_results(
             gnn_experiments["decoder_comparison"],
             print_section,

@@ -1,3 +1,7 @@
+"""
+MODULO PER L'ANALISI TOPOLOGICA E LA VISUALIZZAZIONE DEL GRAFO
+"""
+
 import networkx as nx
 import matplotlib.pyplot as plt
 from config import RESULTS_DIR, DATASET_NAME
@@ -26,12 +30,13 @@ def degree_statistics(G: nx.Graph):
 
 
 
-def plot_degree_distribution(
-    G: nx.Graph,
-    title,
-    show=False,
-    save=True,
-):
+def plot_degree_distribution(G: nx.Graph, title, show=False, save=True):
+    """
+    Genera e salva un istogramma della distribuzione dei gradi del grafo.
+    Permette di identificare se la rete segue una power-law
+    --> una massa enorme di nodi ha pochissime connessioni
+    --> una frazione di nodi posside una quantità spropositata di connessioni
+    """
     degrees = [degree for _, degree in G.degree()]
 
     plt.figure(figsize=(8, 5))

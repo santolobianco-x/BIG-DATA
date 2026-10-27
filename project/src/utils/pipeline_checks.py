@@ -1,5 +1,8 @@
-
-"""Controlli di integrità della pipeline sperimentale."""
+"""
+MODULO PER L'ORCHESTRAZIONE DEI CONTROLLI DI INTERGRITA' DELLA PIPELINE
+--> Raccoglie tutti i test di sanity check e blocca immediatamente l'esecuzione
+sollevando un RunTimeError.
+"""
 
 from src.utils.sanity_checks import (
     verify_gnn_split,
@@ -10,7 +13,9 @@ from src.utils.sanity_checks import (
 
 
 def run_sanity_checks(graph, splits, negatives, print_section):
-    """Verifica split, negative sampling e nodi isolati."""
+    """
+    Esegue in sequenza tutti i controlli sui set di dati generici 
+    """
 
     print_section("SANITY CHECKS")
 

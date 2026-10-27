@@ -1,14 +1,13 @@
+"""
+MODULO DEDICATO ALL'ESPORTAZIONE DEI RISULTATI SPERIMENTALI
+--> gestisce il salvataggio strutturato dei dati su dico sotto forma di file CSV
+"""
 import csv
 from pathlib import Path
 
 
 
 def export_rows(rows, output_path, overwrite=True):
-    """Esporta una lista di dizionari in un file CSV.
-
-    Se il file esiste già, non lo modifica a meno che
-    overwrite=True.
-    """
     rows = list(rows)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -32,11 +31,12 @@ def export_rows(rows, output_path, overwrite=True):
         newline="",
         encoding="utf-8",
     ) as file:
+        # mappa automaticamente i dizionari di Python alle colonne del CSV
         writer = csv.DictWriter(
             file,
             fieldnames=fieldnames,
         )
-        writer.writeheader()
+        writer.writeheader() # scrive la prima riga con i nomi delle colonne
         writer.writerows(rows)
 
     print(f"Risultati salvati in: {output_path}")
@@ -45,6 +45,14 @@ def export_rows(rows, output_path, overwrite=True):
 
 
 def flatten_degree_bias_results(results):
+    """
+    Appiattisce un dizionario annidato di risultati in una lista di dizionari.
+    
+    I risultati dell'analisi degree-bias sono restituiti in un formato annidato:
+    results[nome_baseline][quartile] = metriche
+
+    Questa funzione converte tale struttura in un formato tabulare ideale per esportazioni.
+    """
     rows = []
 
     for baseline, quartiles in results.items():
@@ -58,4 +66,4 @@ def flatten_degree_bias_results(results):
                 "ap": metrics["ap"],
             })
 
-    return rows
+    return rows #list of dict: dati appiattiti, dove ogni dict è una riga completa

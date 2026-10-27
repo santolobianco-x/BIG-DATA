@@ -1,5 +1,10 @@
+"""
+MODULO PER L'ORCHESTRAZIONE E LA PREPARAZIONE DEI DATI SPERIMENTALI
 
-"""Preparazione degli split, dei negativi e delle query di valutazione."""
+--> coordina la suddivisione del grafo in set di addestramento, validazione e test.
+Gestisce il campionamento degli archi negativi per evitare qualsiasi forma di 
+data leakage(sovrapposzione di dati tra i set).
+"""
 
 from config import (
     SEED,
@@ -18,7 +23,13 @@ from src.negative_sampling import (
 
 
 def prepare_graph_splits(graph):
-    """Crea gli split esterni e quelli interni per la GNN."""
+    """
+    Coordina la suddivisione del grafo a due livelli:
+    - train, validation e test set
+    - message passing(struttura) e supervision(etichette)
+    """
+
+    
     train_graph, val_edges, test_edges = split_edges(
         graph,
         test_ratio=TEST_RATIO,
@@ -28,15 +39,24 @@ def prepare_graph_splits(graph):
 
     train_edges = list(train_graph.edges())
 
-    (
-        message_passing_graph,
-        message_passing_edges,
-        supervised_train_edges,
-    ) = split_train_edges_for_gnn(
+
+    """
+    Il Message Passing è l'algoritmo dove:
+        - ogno nodo guarda i suo vicini diretti nel grafo e raccoglie le informazioni
+        - il nodo prende i messaggi ricevuti dai vicini e ne fa una media
+        - unisce le informazioni ricevute alle informazioni di partenza
+    """
+    (message_passing_graph,message_passing_edges,supervised_train_edges,) = split_train_edges_for_gnn(
         train_graph,
         supervision_ratio=SUPERVISION_RATIO,
         seed=SEED,
     )
+    """
+    Per evitare che la GNN bari, si nasconde una percentuale degli archi di training.
+    La GNN userà il message_passing_graph per calcolare gli embedding e cercherà di indovinare
+    i supervised_train_edges.
+    """
+    
 
     print("\n" + "=" * 70)
     print("EDGE SPLIT")
@@ -56,11 +76,16 @@ def prepare_graph_splits(graph):
         "message_passing_graph": message_passing_graph,
         "message_passing_edges": message_passing_edges,
         "supervised_train_edges": supervised_train_edges,
-    }
+    } # dizionario completo contenente tutti i sottografi e le liste di archi divisi
 
 
 def prepare_negative_edges(graph, splits):
-    """Genera negativi disgiunti, escludendo tutti gli archi reali."""
+    """
+    Genera gli archi negativi.
+    Ogni volta che viene generato un set di negativi, questo viene aggiunto all'insieme delle coppie
+    proibite. 
+    Questo garantisce che non ci sia mai un'intersezione tra i negativi e i positivi.
+    """
     print("\n" + "=" * 70)
     print("NEGATIVE SAMPLING")
     print("=" * 70)
@@ -82,10 +107,13 @@ def prepare_negative_edges(graph, splits):
         forbidden_edges=original_edges,
     )
 
+
+    # insieme degli archi vietati: archi positivi e negativi di train
     train_forbidden = original_edges | {
         tuple(sorted(edge))
         for edge in train_negative_edges
     }
+
 
     val_negative_edges = generate_negative_edges(
         graph,
@@ -94,6 +122,7 @@ def prepare_negative_edges(graph, splits):
         forbidden_edges=train_forbidden,
     )
 
+    # insieme degli archi vietati: archi positivi, negativi di train e validation
     val_forbidden = train_forbidden | {
         tuple(sorted(edge))
         for edge in val_negative_edges
@@ -106,6 +135,7 @@ def prepare_negative_edges(graph, splits):
         forbidden_edges=val_forbidden,
     )
 
+    # insieme degli archi vietati: archi positivi, negativi di train, validation e test
     test_forbidden = val_forbidden | {
         tuple(sorted(edge))
         for edge in test_negative_edges
@@ -128,11 +158,17 @@ def prepare_negative_edges(graph, splits):
         "val_negative_edges": val_negative_edges,
         "test_negative_edges": test_negative_edges,
         "supervised_train_negative_edges": supervised_train_negative_edges,
-    }
+    } # dizionario contenente le liste di archi negativi per ogni fase
 
 
 def prepare_hits_queries(graph, test_edges):
-    """Crea le query positive e i relativi candidati negativi."""
+    """
+    Prepara le query per la metrica di ranking Hits@K.
+
+    Hits@K simula un sistema di raccomandazione dove prende 1 arco positivo
+    e lo nasconde in mezzo a N archi distrattori. Se il modello assegna all'arco vero
+    uno score più alto rispetto ai distrattori, il modello funziona.
+    """
     print("\n" + "=" * 70)
     print("HITS@K QUERY GENERATION")
     print("=" * 70)
@@ -144,6 +180,7 @@ def prepare_hits_queries(graph, test_edges):
 
     query_positive_edges = list(test_edges[:NUM_QUERY_POSITIVES])
 
+    # Pe ognuno dei bersagli si generano centinaia di distrattori
     query_negative_edges = generate_query_negative_edges(
         graph,
         query_positive_edges,
@@ -159,5 +196,5 @@ def prepare_hits_queries(graph, test_edges):
         f"{sum(len(edges) for edges in query_negative_edges)}"
     )
 
-    return query_positive_edges, query_negative_edges
+    return query_positive_edges, query_negative_edges #tuple contenenti query positive e negative
 
