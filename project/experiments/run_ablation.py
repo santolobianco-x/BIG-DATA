@@ -72,11 +72,11 @@ def run_feature_ablation(
             degrees = torch.bincount(data.edge_index[0],minlength=data.num_nodes)
 
             # controlla se tutti i nodi hanno le stesse feature iniziali
-            print( "Feature rows uniche:", torch.unique(data.x, dim=0).size(0))
+            print("Unique feature rows:", torch.unique(data.x, dim=0).size(0))
 
             # analizza quanti nodi sono isolati e quanti no
-            print( "Nodi isolati nel message-passing graph:", (degrees == 0).sum().item())
-            print("Nodi non isolati:",(degrees > 0).sum().item())
+            print("Isolated nodes in message-passing graph:", (degrees == 0).sum().item())
+            print("Non-isolated nodes:",(degrees > 0).sum().item())
 
 
         print(f"Input features: {data.x.shape[1]}")
@@ -207,7 +207,7 @@ def run_feature_ablation(
             )
 
             # deviazione standard di tutti gli elementi della matrice
-            print("Embedding std complessiva:", z.std().item())
+            print("Overall embedding std:", z.std().item())
 
             # si controlla se esiste almeno un nodo di questo tipo e si
             # analizza l'embending dei nodi non isolati
@@ -219,12 +219,12 @@ def run_feature_ablation(
                     (z_non_isolated - z_non_isolated[0]).abs().max().item()
                 )
                 
-                print("Std embedding nodi non isolati:", z_non_isolated.std().item())
+                print("Non-isolated nodes embedding std:", z_non_isolated.std().item())
 
             
             if z_isolated.size(0) > 0:
-                print( "Std embedding nodi isolati:",z_isolated.std().item())
-                print( "Max absolute isolated embedding:", z_isolated.abs().max().item())
+                print("Isolated nodes embedding std:", z_isolated.std().item())
+                print("Max absolute isolated embedding:", z_isolated.abs().max().item())
 
             print("\nPositive scores:")
             print("  Min:", float(np.min(positive_scores)))

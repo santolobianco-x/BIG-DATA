@@ -17,7 +17,7 @@ def score_edges_from_embeddings(z,decoder, edge_index,batch_size=50000,return_pr
     """
 
     if batch_size <= 0:
-        raise ValueError("batch_size deve essere maggiore di 0.")
+        raise ValueError("batch_size must be greater than 0.")
 
     edge_index = edge_index.long()
 
@@ -112,13 +112,11 @@ def predict_query_candidates(
     negatives_per_query = len(query_negative_edges[0])
 
     if negatives_per_query == 0:
-        raise ValueError("Ogni query deve avere almeno un negativo.")
+        raise ValueError("Each query must have at least one negative.")
 
     for negative_edges in query_negative_edges:
         if len(negative_edges) != negatives_per_query:
-            raise ValueError(
-                "Tutte le query devono avere lo stesso numero di negativi."
-            )
+            raise ValueError("All queries must have the same number of negatives.")
 
     flat_negative_edges = [
         edge

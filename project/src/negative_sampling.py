@@ -19,7 +19,7 @@ def generate_negative_edges(G, num_edges, seed=42, forbidden_edges=None):
     """
 
     if num_edges < 0:
-        raise ValueError("num_edges non può essere negativo.")
+        raise ValueError("num_edges cannot be negative.")
 
     if num_edges == 0:
         return []
@@ -28,7 +28,7 @@ def generate_negative_edges(G, num_edges, seed=42, forbidden_edges=None):
 
     if len(nodes) < 2:
         raise ValueError(
-            "Servono almeno due nodi per generare archi negativi."
+            "At least two nodes are required to generate negative edges."
         )
 
     if forbidden_edges is None:
@@ -56,8 +56,7 @@ def generate_negative_edges(G, num_edges, seed=42, forbidden_edges=None):
 
     if num_edges > available:
         raise ValueError(
-            f"Richiesti {num_edges} archi negativi, "
-            f"ma le coppie disponibili sono solo {available}."
+            f"Requested {num_edges} negative edges, but only {available} pairs are available."
         )
 
     rng = random.Random(seed)
@@ -83,7 +82,7 @@ def generate_query_negative_edges(G, positive_edges, num_negatives_per_query=999
 
     if num_negatives_per_query < 0:
         raise ValueError(
-            "num_negatives_per_query non può essere negativo."
+            "num_negatives_per_query cannot be negative."
         )
 
     rng = random.Random(seed)
@@ -92,7 +91,7 @@ def generate_query_negative_edges(G, positive_edges, num_negatives_per_query=999
 
     for u, v in positive_edges:
         if u not in G:
-            raise ValueError(f"Il nodo {u} non appartiene al grafo.")
+            raise ValueError(f"Node {u} does not belong to the graph.")
 
         # Destinazioni ammissibili: nodi diversi da u
         # che non sono già suoi vicini.
@@ -104,10 +103,9 @@ def generate_query_negative_edges(G, positive_edges, num_negatives_per_query=999
 
         if num_negatives_per_query > available:
             raise ValueError(
-                f"Query ({u}, {v}): richiesti "
-                f"{num_negatives_per_query} negativi, "
-                f"ma per il nodo {u} ne sono disponibili "
-                f"solo {available}."
+                f"Query ({u}, {v}): "
+                f"requested {num_negatives_per_query} negatives,"
+                f" but only {available} are available for node {u}."
             )
 
         negative_edges = set()

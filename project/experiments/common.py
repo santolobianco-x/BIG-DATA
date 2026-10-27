@@ -30,19 +30,16 @@ def evaluate_baseline_hits(G, query_positive_edges,query_negative_edges,
 
     # controllo eventuali errori
     if not query_positive_edges:
-        raise ValueError("L'insieme delle query positive è vuoto.")
+        raise ValueError("The set of positive queries is empty.")
 
     if len(query_positive_edges) != len(query_negative_edges):
-        raise ValueError(
-            "Il numero di query positive deve coincidere "
-            "con quello degli insiemi di candidati negativi."
-        )
+        raise ValueError("The number of positive queries must match the number of negative candidate sets.")
 
     if not k_values:
-        raise ValueError("Specificare almeno un valore di K.")
+        raise ValueError("Specify at least one value of K.")
 
     if any(k <= 0 for k in k_values):
-        raise ValueError("Tutti i valori di K devono essere positivi.")
+        raise ValueError("All K values must be positive.")
 
     
 
@@ -55,8 +52,7 @@ def evaluate_baseline_hits(G, query_positive_edges,query_negative_edges,
 
     if len(positive_scores) != len(query_positive_edges):
         raise ValueError(
-            f"{name}: numero di score positivi non coerente "
-            "con il numero di query."
+            f"{name}: number of positive scores inconsistent with the number of queries."
         )
 
     # si utilizza un'unica lista per sfruttare la vettorizzazione interna
@@ -71,7 +67,7 @@ def evaluate_baseline_hits(G, query_positive_edges,query_negative_edges,
 
     if len(flat_scores) != len(flat_negative_edges):
         raise ValueError(
-            f"{name}: numero di score negativi restituiti non coerente."
+            f"{name}: number of returned negative scores is inconsistent."
         )
 
 

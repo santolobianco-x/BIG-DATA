@@ -44,11 +44,11 @@ def evaluate_scores(pos_scores, neg_scores):
     
     if len(pos_scores) == 0 or len(neg_scores) == 0:
         raise ValueError(
-            "Sono necessari almeno uno score positivo e uno negativo."
+            "At least one positive and one negative score are required."
         )
 
     if not np.all(np.isfinite(pos_scores)) or not np.all(np.isfinite(neg_scores)):
-        raise ValueError("Gli score devono essere tutti finiti.")
+        raise ValueError("All scores must be finite.")
 
 
     # Creazione dell'etichette:
@@ -78,11 +78,11 @@ def hits_at_k(query_positive_scores, query_negative_scores, k, tie="pessimistic"
     """
 
     if isinstance(k, bool) or not isinstance(k, (int, np.integer)) or k <= 0:
-        raise ValueError("k deve essere un intero maggiore di 0.")
+        raise ValueError("k must be an integer greater than 0.")
 
     if tie not in {"pessimistic", "average", "optimistic"}:
         raise ValueError(
-            "tie deve essere 'pessimistic', 'average' oppure 'optimistic'."
+            "tie must be 'pessimistic', 'average' or 'optimistic'."
         )
     # tie serve a decidere se il modello deve o non deve penalizzare l'arco vero
 
@@ -100,29 +100,27 @@ def hits_at_k(query_positive_scores, query_negative_scores, k, tie="pessimistic"
     # Controlli di integrità dimensionale
     if len(positive_scores) != len(negative_rows):
         raise ValueError(
-            "Il numero di score positivi deve coincidere "
-            "con il numero di query negative."
+            "The number of positive scores must match the number of negative queries."
         )
 
     if len(positive_scores) == 0:
         return 0.0
 
     if any(len(row) == 0 for row in negative_rows):
-        raise ValueError("Ogni query deve avere almeno un candidato negativo.")
+        raise ValueError("Each query must have at least one negative candidate.")
 
     if not np.all(np.isfinite(positive_scores)):
-        raise ValueError("Gli score positivi devono essere tutti finiti.")
+        raise ValueError("Positive scores must all be finite.")
 
     if not all(np.all(np.isfinite(row)) for row in negative_rows):
-        raise ValueError("Gli score negativi devono essere tutti finiti.")
+        raise ValueError("Negative scores must all be finite.")
 
     
     candidate_counts = {len(row) for row in negative_rows}
 
     if len(candidate_counts) != 1:
         raise ValueError(
-            "Tutte le query devono avere lo stesso numero "
-            "di candidati negativi."
+            "All queries must have the same number of negative candidates."
         )
 
     negative_scores = np.stack(negative_rows, axis=0)

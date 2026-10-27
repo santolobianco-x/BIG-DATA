@@ -45,15 +45,13 @@ def split_train_edges_for_gnn(
 
     if not 0 < supervision_ratio < 1:
         raise ValueError(
-            "supervision_ratio deve essere compreso tra 0 e 1."
+            "supervision_ratio must be between 0 and 1."
         )
 
     edges = list(train_graph.edges())
 
     if len(edges) < 2:
-        raise ValueError(
-            "Servono almeno due archi per effettuare la separazione."
-        )
+        raise ValueError("At least two edges are required to perform the split.")
 
     rng = random.Random(seed)
     rng.shuffle(edges)

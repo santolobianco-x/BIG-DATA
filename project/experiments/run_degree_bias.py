@@ -96,10 +96,10 @@ def evaluate_degree_bias(positive_edges, negative_edges, positive_scores,
     negative_scores = to_list(negative_scores)
 
     if len(positive_edges) != len(positive_scores):
-        raise ValueError("Numero di archi positivi e score positivi non coerente.")
+        raise ValueError("Number of positive edges and positive scores is inconsistent.")
 
     if len(negative_edges) != len(negative_scores):
-        raise ValueError("Numero di archi negativi e score negativi non coerente.")
+        raise ValueError("Number of negative edges and negative scores is inconsistent.")
 
     # si uniscono gli archi per avere una distribuzione globale dei gradi
     all_edges = positive_edges + negative_edges
@@ -169,16 +169,16 @@ def run_degree_bias_experiment(train_graph: nx.Graph, positive_edges,
     negative_edges = list(negative_edges)
  
     if not positive_edges or not negative_edges:
-        raise ValueError( "Il test deve contenere archi positivi e negativi.")
+        raise ValueError( "The test set must contain both positive and negative edges.")
 
     if not scoring_functions:
-        raise ValueError("Specificare almeno un baseline da valutare.")
+        raise ValueError("Specify at least one baseline to evaluate.")
 
     print("\n" + "=" * 65)
     print("DEGREE-BIAS ANALYSIS")
     print("=" * 65)
 
-    print("Il grado degli estremi viene calcolato esclusivamente sul grafo di training.")
+    print("Endpoint degrees are computed exclusively on the training graph.")
 
     all_results = {}
 
@@ -202,8 +202,8 @@ def run_degree_bias_experiment(train_graph: nx.Graph, positive_edges,
 
         # stampa l'intestazione della tabella
         print(f"{'Quartile':<10}"
-            f"{'Positivi':>12}"
-            f"{'Negativi':>12}"
+            f"{'Positives':>12}"
+            f"{'Negatives':>12}"
             f"{'AUC':>12}"
             f"{'AP':>12}"
         )

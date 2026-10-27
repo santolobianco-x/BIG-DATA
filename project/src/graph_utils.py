@@ -50,7 +50,7 @@ def plot_degree_distribution(G: nx.Graph, title, show=False, save=True):
 
         output_path = RESULTS_DIR / f"{DATASET_NAME}_degree_distribution.png"
         plt.savefig(output_path, dpi=300, bbox_inches="tight")
-        print(f"Grafico salvato in: {output_path}")
+        print(f"Plot saved to: {output_path}")
 
     if show:
         plt.show()

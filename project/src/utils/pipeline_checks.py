@@ -41,7 +41,7 @@ def run_sanity_checks(graph, splits, negatives, print_section):
     )
 
     if not gnn_split_valid:
-        raise RuntimeError("Controlli dello split GNN falliti.")
+        raise RuntimeError("GNN split checks failed.")
 
     positive_valid = verify_positive_split(
         graph,
@@ -64,8 +64,8 @@ def run_sanity_checks(graph, splits, negatives, print_section):
     analyze_isolated_nodes(message_passing_graph, val_edges, test_edges, graph_name="message_passing")
 
     if not positive_valid:
-        raise RuntimeError("Positive split non valido.")
+        raise RuntimeError("Invalid positive split.")
 
     if not negative_valid:
-        raise RuntimeError("Negative sampling non valido.")
+        raise RuntimeError("Invalid negative sampling.")
 

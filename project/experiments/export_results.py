@@ -14,12 +14,12 @@ def export_rows(rows, output_path, overwrite=True):
 
     if not rows:
         raise ValueError(
-            f"Nessun risultato da esportare: {output_path}"
+            f"No results to export: {output_path}"
         )
 
     if output_path.exists() and not overwrite:
         print(
-            f"Risultati già presenti, esportazione saltata: "
+            f"Results already present, export skipped: "
             f"{output_path}"
         )
         return False
@@ -39,7 +39,7 @@ def export_rows(rows, output_path, overwrite=True):
         writer.writeheader() # scrive la prima riga con i nomi delle colonne
         writer.writerows(rows)
 
-    print(f"Risultati salvati in: {output_path}")
+    print(f"Results saved to: {output_path}")
     return True
 
 

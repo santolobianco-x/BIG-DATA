@@ -49,13 +49,13 @@ def parse_args():
     selettivamente solo una parte degli esperimenti, risparmiando tempo durante 
     la fase di testing e debugging.
     """
-    parser = argparse.ArgumentParser(description="Pipeline di link prediction con baseline e GNN.")
+    parser = argparse.ArgumentParser(description="Link prediction pipeline with baselines and GNN.")
 
     parser.add_argument(
         "--run",
         choices=("all", "baselines", "gnn"),
         default="all",
-        help="Esperimenti da eseguire (default: all).",
+        help="Experiments to run (default: all).",
     )
     return parser.parse_args()
 

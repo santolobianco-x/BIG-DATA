@@ -105,7 +105,7 @@ def run_gnn_multiseed(
 
     if decoder_type not in ("mlp", "dot_product"):
         raise ValueError(
-            "decoder_type deve essere 'mlp' oppure 'dot_product'."
+            "decoder_type must be 'mlp' or 'dot_product'."
         )
 
     results = []
@@ -256,7 +256,7 @@ def run_gnn_multiseed(
     # se non è stato eseguito nemmeno un seed, non si può calcolare media 
     # e deviazioni standard
     if not results:
-        raise ValueError("La lista dei seed non può essere vuota.")
+        raise ValueError("The seed list cannot be empty.")
 
     
     print()
@@ -328,7 +328,7 @@ def run_gnn_experiments(splits, negatives, queries,
         message_passing_graph,
         data,
     ):
-        raise RuntimeError("Feature GNN non coerenti con il grafo di training.")
+        raise RuntimeError("GNN features are inconsistent with the training graph.")
 
 
 
@@ -437,7 +437,7 @@ def save_gnn_results(gnn_results, print_section):
 
     # se non ci sono risultati non ha senso creare CSV
     if not all_gnn_results:
-        raise RuntimeError("Nessun risultato GNN disponibile.")
+        raise RuntimeError("No GNN results available.")
 
     detailed_path = RESULTS_DIR / f"{DATASET_NAME}_gnn_decoder_results.csv"
 

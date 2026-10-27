@@ -72,7 +72,7 @@ def sample_message_passing_edges(edge_index, keep_ratio, seed):
 
     # CONTROLLI UTILI AD EVITARE OUT-BOUNDING E A RIDURRE IL LAVORO SE INUTILE
     if not 0.0 <= keep_ratio <= 1.0:
-        raise ValueError("keep_ratio deve essere compreso tra 0 e 1.")
+        raise ValueError("keep_ratio must be between 0 and 1.")
 
     if edge_index.numel() == 0:
         return torch.empty((2, 0), dtype=edge_index.dtype, device=edge_index.device)
@@ -136,7 +136,7 @@ def networkx_to_pyg(G, feature_mode="full"):
         "constant"
     }:
         raise ValueError(
-            f"Feature mode non valido: {feature_mode}"
+            f"Invalid feature mode: {feature_mode}"
         )
 
     nodes = list(G.nodes())

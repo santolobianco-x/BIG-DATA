@@ -123,9 +123,9 @@ def verify_positive_split(G, train_graph, val_edges, test_edges):
     print()
 
     if valid:
-        print("Positive split valido")
+        print("Positive split valid")
     else:
-        print("Positive split NON valido")
+        print("Positive split NOT valid")
 
     return valid
 
@@ -162,9 +162,9 @@ def verify_negative_edges(
     print(f"Test negatives : {len(test_negative)}")
 
     # --------------------------------------------------------
-    # Disjointness checks
+    # DISJOINTNESS CHECKS(CONTROLLI DI DISGIUNZIONE)
     # --------------------------------------------------------
-    print("\nRisultati controlli di disgiunzione:")
+    print("\nDisjointness check results:")
     
     checks = {
         "Train negatives ∩ Original == ∅": train_negative.isdisjoint(original_edges),
@@ -189,9 +189,9 @@ def verify_negative_edges(
 
     print()
     if valid:
-        print("Negative sampling valido")
+        print("Negative sampling valid")
     else:
-        print("Negative sampling NON valido")
+        print("Negative sampling NOT valid")
 
     return valid
 
@@ -356,11 +356,11 @@ def verify_feature_source(G, train_graph, data):
 
     if matches_train:
         print(
-            "Le feature corrispondono al training graph."
+            "Features match the training graph."
         )
     else:
         print(
-            "Le feature NON corrispondono al training graph."
+            "Features do NOT match the training graph."
         )
 
     return matches_train
@@ -405,14 +405,14 @@ def verify_gnn_split(
 
     # Eseguiamo i controlli in modo ottimizzato senza allocare nuovi set
     checks = {
-        "Message-passing graph coerente": graph_mp_set == mp_set,
-        "Message passing e supervisione disgiunti": mp_set.isdisjoint(supervised_set),
-        "Unione uguale al training graph": (mp_set | supervised_set) == train_set,
-        "Nessun arco di validation nel message passing": mp_set.isdisjoint(val_set),
-        "Nessun arco di test nel message passing": mp_set.isdisjoint(test_set),
-        "Negativi supervisionati assenti dai positivi train": supervised_neg_set.isdisjoint(train_set),
-        "Negativi supervisionati disgiunti dai negativi validation": supervised_neg_set.isdisjoint(val_neg_set),
-        "Negativi supervisionati disgiunti dai negativi test": supervised_neg_set.isdisjoint(test_neg_set),
+        "Message-passing graph consistent": graph_mp_set == mp_set,
+        "Message passing and supervision edges disjoint": mp_set.isdisjoint(supervised_set),
+        "Union equals training graph": (mp_set | supervised_set) == train_set,
+        "No validation edges in message passing": mp_set.isdisjoint(val_set),
+        "No test edges in message passing": mp_set.isdisjoint(test_set),
+        "Supervised negatives absent from train positives": supervised_neg_set.isdisjoint(train_set),
+        "Supervised negatives disjoint from validation negatives": supervised_neg_set.isdisjoint(val_neg_set),
+        "Supervised negatives disjoint from test negatives": supervised_neg_set.isdisjoint(test_neg_set),
     }
 
     for description, passed in checks.items():
@@ -422,9 +422,9 @@ def verify_gnn_split(
 
     print()
     print(
-        "GNN split valido"
+        "GNN split valid"
         if valid
-        else "GNN split NON valido"
+        else "GNN split NOT valid"
     )
 
     return valid

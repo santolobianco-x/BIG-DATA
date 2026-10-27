@@ -175,7 +175,7 @@ def prepare_hits_queries(graph, test_edges):
 
     if len(test_edges) < NUM_QUERY_POSITIVES:
         raise ValueError(
-            "Il test set contiene meno archi delle query richieste."
+            "The test set contains fewer edges than the requested queries."
         )
 
     query_positive_edges = list(test_edges[:NUM_QUERY_POSITIVES])
