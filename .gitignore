@@ -33,9 +33,11 @@ ENV/
 # =========================
 
 # Dataset originali
-data/*
+data/
 
-!data/.gitkeep
+project/data/*
+
+!project/data/*.gitkeep
 
 
 # =========================
