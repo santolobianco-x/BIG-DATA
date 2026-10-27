@@ -4,7 +4,7 @@ MODULO DEDICATO ALL'ESPORTAZIONE DEI RISULTATI SPERIMENTALI
 """
 import csv
 from pathlib import Path
-
+from config import DATASET_NAME
 
 
 def export_rows(rows, output_path, overwrite=True):
@@ -58,6 +58,7 @@ def flatten_degree_bias_results(results):
     for baseline, quartiles in results.items():
         for quartile, metrics in quartiles.items():
             rows.append({
+                "dataset": DATASET_NAME,
                 "baseline": baseline,
                 "quartile": quartile,
                 "positive_edges": metrics["positive_edges"],

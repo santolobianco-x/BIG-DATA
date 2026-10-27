@@ -224,6 +224,7 @@ def run_gnn_multiseed(
         # salvataggio delle informazioni principali relative al 
         # modello addestrato con il seed specificato
         result = {
+            "dataset": DATASET_NAME,
             "decoder": decoder_type,
             "seed": seed,
             "best_epoch": history["best_epoch"],
@@ -363,6 +364,7 @@ def run_gnn_experiments(splits, negatives, queries,
     # e le relative metriche
     for mode, metrics in feature_ablation_results.items():
         feature_ablation_rows.append({
+            "dataset": DATASET_NAME,
             "feature_mode": mode,
             "input_features": metrics["input_features"],
             "best_epoch": metrics["best_epoch"],
@@ -495,7 +497,11 @@ def save_gnn_results(gnn_results, print_section):
         )
 
         # si crea una riga riepilogativa per il CSV
-        row = {"decoder": decoder_type, "num_seeds": len(decoder_results)}
+        row = {
+            "dataset": DATASET_NAME,
+            "decoder": decoder_type, 
+            "num_seeds": len(decoder_results)
+        }
 
         # per ogni metrica si salva la media e la deviazione standard
         for metric in EVALUATION_METRICS:

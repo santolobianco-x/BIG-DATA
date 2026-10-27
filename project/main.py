@@ -32,11 +32,11 @@ from src.graph_utils import (
     degree_statistics,
     plot_degree_distribution,
 )
-from experiments.run_baselines import (
+
+
+from experiments import (
     run_baseline_experiments,
     run_additional_baseline_analyses,
-)
-from experiments.run_gnn import (
     prepare_gnn_data,
     run_gnn_experiments,
     save_gnn_results,

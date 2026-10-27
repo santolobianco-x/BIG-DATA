@@ -68,8 +68,13 @@ def run_baseline_experiments(splits, negatives, queries, print_section):
     ]:
         for baseline, metrics in results.items():
             # riga base del CSV
-            row = {"graph": graph_name, "baseline": baseline,
-                   "auc": metrics["auc"],"ap": metrics["ap"]}
+            row = {
+                "dataset": DATASET_NAME,
+                "graph": graph_name, 
+                "baseline": baseline,
+                "auc": metrics["auc"],
+                "ap": metrics["ap"]
+            }
 
             # aggiunge colonne per ogni k di Hits@K richiesto
             for k in HITS_K_VALUES:
