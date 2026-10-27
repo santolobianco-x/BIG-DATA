@@ -1,4 +1,4 @@
-name: link_prediction
+name: bidata
 channels:
   - pytorch
   - pyg
