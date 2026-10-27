@@ -1,0 +1,12 @@
+I dataset non sono inclusi nella repository per questioni di spazio.
+Scarica uno dei seguenti dataset e posizionalo in questa cartella (data/) senza decomprimerlo:
+
+1. ca-AstroPh/ca-GrQc (Co-autoraggio scientifico)
+   File: ca-AstroPh.txt.gz
+   Download: https://snap.stanford.edu/data/ca-AstroPh.html
+
+2. Facebook Social Circles (Rete sociale)
+   File: facebook_combined.txt.gz
+   Download: https://snap.stanford.edu/data/ego-Facebook.html
+
+Attenzione: Se utilizzi un dataset diverso da ca-AstroPh.txt.gz, ricordati di aggiornare la variabile DATASET_PATH nel file config.py.
