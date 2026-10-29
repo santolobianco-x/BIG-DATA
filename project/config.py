@@ -22,7 +22,7 @@ RESULTS_DIR = PROJECT_ROOT / "results"
 
 SEED = 42
 
-GNN_SEEDS = (1, 2) #Seed multipli per valutare la stabilità della GNN.
+GNN_SEEDS = (1, 2, 3, 4, 5) #Seed multipli per valutare la stabilità della GNN.
 #con più seed si può calcolare media e deviazione standard
 
 
