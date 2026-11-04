@@ -1,4 +1,4 @@
-# 🔗 Link Prediction in una rete sociale con GNN
+# Link Prediction in una rete sociale con GNN
 
 ## Descrizione del progetto
 
