@@ -12,15 +12,25 @@ La soluzione implementa un encoder **GraphSAGE**, associato a due decoder altern
 
 Il progetto comprende le seguenti componenti:
 
-- **Baseline euristiche:** Common Neighbors, Jaccard, Adamic-Adar e Preferential Attachment, implementate attraverso NetworkX.
-- **Modello GNN:** encoder GraphSAGE sviluppato con PyTorch Geometric, confrontato utilizzando decoder MLP e Dot Product.
-- **Metriche di valutazione:** ROC-AUC, Average Precision (AP) e Hits@K.
-- **Data splitting e negative sampling:** separazione degli archi per training, validation e test, con generazione di coppie negative.
-- **Controlli anti-leakage:** verifiche sulla separazione degli archi e sulla provenienza delle feature utilizzate dalla GNN.
-- **Feature ablation:** confronto tra configurazioni basate su feature complete, grado, clustering e feature costanti.
-- **Degree bias analysis:** analisi delle prestazioni delle baseline in funzione dei quartili di grado dei nodi.
-- **Esperimenti multi-seed:** ripetizione dell'addestramento della GNN con seed differenti e calcolo di media e deviazione standard delle metriche.
-- **Esportazione dei risultati:** salvataggio automatico delle metriche sperimentali in file CSV e della distribuzione dei gradi in formato immagine.
+* **Baseline euristiche:** Common Neighbors, Jaccard, Adamic-Adar e Preferential Attachment, implementate attraverso NetworkX.
+
+* **Modello GNN:** encoder GraphSAGE sviluppato con PyTorch Geometric, confrontato utilizzando decoder MLP e Dot Product.
+
+* **Metriche di valutazione:** ROC-AUC, Average Precision (AP) e Hits@K.
+
+* **Data splitting e negative sampling:** separazione degli archi per training, validation e test, con generazione di coppie negative.
+
+* **Controlli anti-leakage:** verifiche sulla separazione degli archi e sulla provenienza delle feature utilizzate dalla GNN.
+
+* **Feature ablation:** confronto tra configurazioni basate su feature complete, grado, clustering e feature costanti.
+
+* **Degree bias analysis:** analisi delle prestazioni delle baseline in funzione dei quartili di grado dei nodi.
+
+* **Esperimenti multi-seed:** ripetizione dell'addestramento della GNN con seed differenti e calcolo di media e deviazione standard delle metriche.
+
+* **Esportazione dei risultati:** salvataggio automatico delle metriche sperimentali in file CSV e della distribuzione dei gradi in formato immagine.
+
+* **Analisi e Reportistica:** un Jupyter Notebook dedicato all'analisi esplorativa e alla visualizzazione comparativa dei risultati, e una relazione tecnica finale in formato PDF e Word.
 
 ## Struttura del repository
 
@@ -30,13 +40,6 @@ Il progetto comprende le seguenti componenti:
 │   ├── ca-AstroPh.txt.gz
 │   ├── ca-GrQc.txt.gz
 │   └── facebook_combined.txt.gz
-├── results/
-│   ├── *_baseline_results.csv
-│   ├── *_degree_bias_results.csv
-│   ├── *_feature_ablation_results.csv
-│   ├── *_gnn_decoder_results.csv
-│   ├── *_gnn_decoder_summary.csv
-│   └── *_degree_distribution.png
 ├── src/
 │   ├── baseline.py
 │   ├── data_loader.py
@@ -69,16 +72,24 @@ Il progetto comprende le seguenti componenti:
 ├── main.py
 ├── environment.yml
 ├── notebook.ipynb
+├── RELAZIONE PROGETTO.docx
+├── RELAZIONE PROGETTO.pdf
 └── README.md
 ```
 
-La struttura è suddivisa in tre aree principali:
+La struttura è suddivisa nelle seguenti aree principali:
 
-- `src/`: implementazione delle funzionalità principali, tra cui caricamento dei dati, preparazione del grafo, valutazione, modello GNN e controlli.
-- `experiments/`: orchestrazione degli esperimenti, esecuzione delle baseline, ablation study, analisi del degree bias ed esportazione dei risultati.
-- `main.py` e `config.py`: punto di ingresso della pipeline e configurazione dei parametri globali.
+* `src/`: implementazione delle funzionalità principali, tra cui caricamento dei dati, preparazione del grafo, valutazione, modello GNN e controlli.
 
-La cartella `results/` contiene gli output degli esperimenti eseguiti. I file presenti possono essere utilizzati per analizzare i risultati senza dover necessariamente ripetere subito l'addestramento.
+* `experiments/`: orchestrazione degli esperimenti, esecuzione delle baseline, ablation study, analisi del degree bias ed esportazione dei risultati.
+
+* `main.py` e `config.py`: punto di ingresso della pipeline e configurazione dei parametri globali.
+
+* `notebook.ipynb`: notebook Jupyter per l'esplorazione interattiva del dataset e la visualizzazione critica dei risultati.
+
+* `RELAZIONE PROGETTO`: relazione tecnica finale che descrive l'architettura, gli esperimenti e le conclusioni raggiunte.
+
+*(Nota: La cartella `results/` non è tracciata nel repository. Verrà creata automaticamente in locale durante l'esecuzione degli esperimenti per ospitare i file CSV e le immagini generati).*
 
 ## Requisiti
 
@@ -86,12 +97,13 @@ Il progetto utilizza Python e un ambiente Conda configurato tramite `environment
 
 Le principali librerie utilizzate sono:
 
-- PyTorch
-- PyTorch Geometric
-- NetworkX
-- NumPy
-- scikit-learn
-- Matplotlib
+* PyTorch
+* PyTorch Geometric
+* NetworkX
+* NumPy
+* pandas
+* scikit-learn
+* Matplotlib
 
 Le versioni e le dipendenze effettive devono essere quelle definite nel file `environment.yml`.
 
@@ -124,11 +136,11 @@ Se l'ambiente è già presente, non è necessario ricrearlo.
 
 I percorsi e i parametri globali sono definiti in `config.py`. Prima di eseguire la pipeline, verificare che il dataset selezionato corrisponda al file disponibile nella cartella `data/`.
 
-I dataset presenti nella copia locale del progetto sono:
+I dataset testati all'interno del progetto sono:
 
-- `ca-AstroPh.txt.gz`
-- `ca-GrQc.txt.gz`
-- `facebook_combined.txt.gz`
+* `ca-AstroPh.txt.gz`
+* `ca-GrQc.txt.gz`
+* `facebook_combined.txt.gz`
 
 Per utilizzare un dataset differente, verificare il percorso configurato e la compatibilità del formato con il caricatore del grafo.
 
@@ -162,7 +174,12 @@ Esegue lo studio di ablazione delle feature e il confronto multi-seed tra i deco
 
 Se non viene specificata la modalità, il valore predefinito è `all`.
 
-**Nota:** l'esecuzione completa può richiedere tempo, soprattutto durante l'addestramento della GNN. Per consultare i risultati già prodotti, è possibile partire dai CSV presenti nella cartella `results/`, verificando che corrispondano alla configurazione e al dataset desiderati.
+**Nota:** L'esecuzione completa può richiedere tempo, soprattutto durante l'addestramento della GNN. Per esplorare i risultati tramite il notebook Jupyter `notebook.ipynb`, è prima necessario aver eseguito gli esperimenti in locale affinché il codice generi i file CSV nella cartella `results/`.
+
+## Analisi e Documentazione
+
+L'esplorazione dei risultati, unitamente alla visualizzazione dei grafi e alle metriche, è accessibile e commentata in `notebook.ipynb`.
+Tutta l'analisi critica della metodologia, la discussione sui risultati e sui limiti etici e tecnici è consultabile in maniera strutturata nei documenti `RELAZIONE PROGETTO.docx` e `RELAZIONE PROGETTO.pdf`.
 
 ## Metodologia
 
@@ -176,10 +193,10 @@ Per la GNN, il grafo utilizzato per il message passing viene mantenuto distinto 
 
 Le baseline stimano la probabilità di connessione tra due nodi utilizzando informazioni topologiche:
 
-- **Common Neighbors:** numero di vicini condivisi.
-- **Jaccard:** similarità tra gli insiemi dei vicini.
-- **Adamic-Adar:** peso dei vicini condivisi in funzione del loro grado.
-- **Preferential Attachment:** prodotto dei gradi dei due nodi.
+* **Common Neighbors:** numero di vicini condivisi.
+* **Jaccard:** similarità tra gli insiemi dei vicini.
+* **Adamic-Adar:** peso dei vicini condivisi in funzione del loro grado.
+* **Preferential Attachment:** prodotto dei gradi dei due nodi.
 
 Questi metodi forniscono un riferimento per valutare il contributo dell'approccio basato su GNN.
 
@@ -189,58 +206,47 @@ GraphSAGE produce una rappresentazione vettoriale dei nodi a partire dal grafo d
 
 Le rappresentazioni vengono utilizzate da due decoder alternativi:
 
-- **MLP:** combina le rappresentazioni dei nodi attraverso una rete neurale.
-- **Dot Product:** calcola un punteggio attraverso il prodotto scalare delle rappresentazioni.
+* **MLP:** combina le rappresentazioni dei nodi attraverso una rete neurale non lineare.
+* **Dot Product:** calcola un punteggio attraverso il prodotto scalare diretto delle rappresentazioni.
 
 Il confronto permette di valutare le differenze tra due strategie di scoring degli archi.
 
 ### Metriche
 
-- **ROC-AUC:** misura la capacità di distinguere le coppie positive da quelle negative.
-- **Average Precision (AP):** riassume la qualità della classificazione considerando la precisione rispetto al richiamo.
-- **Hits@K:** valuta il posizionamento delle coppie positive rispetto ai candidati negativi, secondo il protocollo query-based implementato.
+* **ROC-AUC:** misura la capacità di distinguere le coppie positive da quelle negative.
+* **Average Precision (AP):** riassume la qualità della classificazione considerando la precisione rispetto al richiamo.
+* **Hits@K:** valuta il posizionamento delle coppie positive rispetto ai candidati negativi, secondo il protocollo query-based implementato.
 
 ### Ablation e degree bias
 
-Lo studio di ablazione confronta diverse configurazioni delle feature nodali per analizzare il contributo delle informazioni disponibili al modello.
+Lo studio di ablazione confronta diverse configurazioni delle feature nodali per analizzare il contributo delle informazioni strutturali disponibili al modello.
 
-L'analisi del degree bias, invece, studia come le prestazioni delle baseline varino in funzione del grado dei nodi, evidenziando eventuali differenze tra nodi a basso grado e nodi altamente connessi.
+L'analisi del degree bias studia come le prestazioni delle baseline varino in funzione del grado dei nodi, evidenziando le asimmetrie predittive tra nodi a basso grado e "hub" altamente connessi.
 
 ### Riproducibilità e controlli
 
-La pipeline imposta seed per rendere gli esperimenti riproducibili e prevede controlli sulle partizioni dei dati e sulle feature della GNN.
-
-La riproducibilità effettiva può dipendere anche dalle librerie, dal dispositivo utilizzato e dalle operazioni numeriche eseguite.
+La pipeline imposta seed per rendere gli esperimenti riproducibili e prevede controlli rigorosi sulle partizioni dei dati e sulle feature generate per la GNN.
 
 ## Risultati
 
-Gli esperimenti esportano file CSV nella directory `results/`, con nomi basati sul dataset configurato.
+Una volta avviata la pipeline, gli esperimenti esporteranno automaticamente i seguenti file CSV e immagini nella directory locale `results/`, assegnando nomi basati sul dataset configurato:
 
-| File | Contenuto |
-|---|---|
-| `*_baseline_results.csv` | Metriche delle baseline |
-| `*_degree_bias_results.csv` | Analisi delle baseline per quartili di grado |
-| `*_feature_ablation_results.csv` | Risultati dell'ablazione delle feature |
-| `*_gnn_decoder_results.csv` | Risultati dettagliati dei singoli seed GNN |
-| `*_gnn_decoder_summary.csv` | Riepilogo delle metriche GNN con media e deviazione standard |
-| `*_degree_distribution.png` | Distribuzione dei gradi del grafo |
+| File | Contenuto | 
+| ----- | ----- | 
+| `*_baseline_results.csv` | Metriche delle baseline | 
+| `*_degree_bias_results.csv` | Analisi delle baseline per quartili di grado | 
+| `*_feature_ablation_results.csv` | Risultati dell'ablazione delle feature | 
+| `*_gnn_decoder_results.csv` | Risultati dettagliati dei singoli seed GNN | 
+| `*_gnn_decoder_summary.csv` | Riepilogo delle metriche GNN con media e deviazione standard | 
+| `*_degree_distribution.png` | Distribuzione dei gradi del grafo | 
 
 La colonna `dataset` permette di identificare il dataset associato a ciascun risultato, facilitando il confronto tra esperimenti differenti.
 
-Il confronto quantitativo e la discussione critica dei risultati saranno presentati nella relazione tecnica e nel notebook di analisi.
-
 ## Limiti e considerazioni etiche
 
-La link prediction può essere utile per individuare relazioni potenziali in reti sociali e di co-autorialità. Tuttavia, le connessioni previste da un modello sono stime, non prove dell'esistenza di una relazione reale.
+La link prediction può essere utile per individuare relazioni potenziali in reti sociali e di co-autorialità. Tuttavia, le connessioni previste da un modello sono stime probabilistiche, non prove dell'esistenza di una relazione reale.
 
-L'applicazione di queste tecniche a reti sociali può comportare rischi per la privacy, soprattutto quando le predizioni vengono utilizzate per inferire relazioni non esplicitamente condivise. È quindi importante considerare la provenienza dei dati, il consenso, le finalità dell'analisi e i possibili effetti delle predizioni sugli individui.
+L'applicazione di queste tecniche a reti sociali può comportare rischi per la privacy, soprattutto quando le predizioni vengono utilizzate per inferire relazioni non esplicitamente condivise. È quindi fondamentale considerare la provenienza dei dati, il consenso, le finalità dell'analisi e i possibili effetti delle predizioni sugli individui.
 
-I risultati dipendono inoltre dal dataset, dalla strategia di campionamento negativo, dalle feature utilizzate e dal protocollo di valutazione. Le prestazioni ottenute non devono essere interpretate automaticamente come una garanzia di generalizzazione a reti differenti.
+I risultati dipendono inoltre dalla struttura del dataset, dalla strategia di campionamento negativo, dalle feature impiegate e dal protocollo di valutazione. Le prestazioni ottenute non devono essere interpretate come una garanzia di generalizzazione automatica ad altre tipologie di reti.
 
-## Stato del progetto
-
-Il progetto comprende la pipeline sperimentale per il confronto tra baseline euristiche e GNN, l'analisi di ablazione, il confronto tra decoder e l'esportazione dei risultati.
-
-Il notebook Jupyter dedicato all'analisi esplorativa e alla visualizzazione comparativa, insieme alla relazione tecnica finale, costituisce la parte di documentazione e presentazione dei risultati da completare.
-
----
