@@ -68,6 +68,7 @@ Il progetto comprende le seguenti componenti:
 ├── config.py
 ├── main.py
 ├── environment.yml
+├── notebook.ipynb
 └── README.md
 ```
 
@@ -243,5 +244,3 @@ Il progetto comprende la pipeline sperimentale per il confronto tra baseline eur
 Il notebook Jupyter dedicato all'analisi esplorativa e alla visualizzazione comparativa, insieme alla relazione tecnica finale, costituisce la parte di documentazione e presentazione dei risultati da completare.
 
 ---
-
-*Progetto realizzato nell'ambito del corso di Big Data, anno accademico 2025/2026.*

@@ -1,4 +1,4 @@
-name: bidata
+name: bigdata
 channels:
   - pytorch
   - pyg
